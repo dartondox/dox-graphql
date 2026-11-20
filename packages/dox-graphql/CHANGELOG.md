@@ -7,9 +7,13 @@
   `@GraphQLMutation`, `@GraphQLField`, `@ResolveField`, `Field` and
   `ObjectType`. With the auth middleware in `GraphQLConfig.middleware`,
   fields need a login by default; without it, they are public. A type
-  with `auth: true` is protected on every field that gives it. A field
+  with `auth: true` is protected on every field that gives it, also
+  when an interface or union field picks it for its value. A field
   that needs a login fails with `UNAUTHENTICATED`, and its resolver does
   not run.
+- The auth middleware is found by `IAuthMiddleware` of dox_core. The
+  release needs the dox_core version that ships `IAuthMiddleware`; the
+  dox_core floor goes up then.
 - The auth middleware runs only when a field needs the user, once per
   request. `DoxGraphQLContext.user<T>()` and `auth()` are now async.
 - `@GraphQLType(policy:)`: a dox_auth policy that guards the update and

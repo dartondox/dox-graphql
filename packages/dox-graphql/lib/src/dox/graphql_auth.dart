@@ -8,15 +8,6 @@ import '../schema.dart';
 import '../types.dart';
 import 'graphql_context.dart';
 
-// TODO: use dox_core IAuthMiddleware. This is a copy until dox_core has
-// it; then delete this class and import it from dox_core.
-/// A middleware that logs a user in, like `AuthMiddleware` of dox_auth.
-abstract class IAuthMiddleware implements IDoxMiddleware {
-  /// Same guards, but lets guests through: a good login sets
-  /// `req.auth`, no login goes on with `req.auth` null.
-  IAuthMiddleware asOptional();
-}
-
 /// The login check of each GraphQL field.
 ///
 /// Which fields need a logged-in user:
@@ -30,6 +21,9 @@ abstract class IAuthMiddleware implements IDoxMiddleware {
 ///    gives an object, interface or union use the default: a login when
 ///    `GraphQLConfig.middleware` has an [IAuthMiddleware], else public.
 /// 5. Else (a scalar or enum field of a type) the field is public.
+///
+/// An interface or union field is also checked on the object type it
+/// picks for its value: a type with `auth: true` needs a login there too.
 ///
 /// A field that fails the check gets the error "Unauthenticated" with
 /// `extensions: {code: UNAUTHENTICATED}`. Its resolver does not run.
@@ -157,6 +151,18 @@ class GraphQLAuth implements FieldGuard {
     Object? context,
   ) {
     if (!needsLogin(parent, field)) return null;
+    if (context is! DoxGraphQLContext) return _error();
+    return _checkUser(context);
+  }
+
+  /// A value of an interface or union field whose object type has
+  /// `auth: true` needs a login, even when the field is public.
+  @override
+  FutureOr<GraphQLError?> checkType(
+    ObjectType<Object?, Object?> type,
+    Object? context,
+  ) {
+    if (type.auth != true) return null;
     if (context is! DoxGraphQLContext) return _error();
     return _checkUser(context);
   }

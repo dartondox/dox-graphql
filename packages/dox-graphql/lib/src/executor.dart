@@ -24,6 +24,14 @@ abstract interface class FieldGuard {
     Field<Object?, Object?> field,
     Object? context,
   );
+
+  /// The error that fails a value of the object [type], or null to go on.
+  /// It runs when an interface or union field picks [type] for its
+  /// value, so a type that the field type does not show is checked too.
+  FutureOr<GraphQLError?> checkType(
+    ObjectType<Object?, Object?> type,
+    Object? context,
+  );
 }
 
 /// Parses, validates and runs GraphQL requests on a [GraphQLSchema].
@@ -635,6 +643,11 @@ final class _Execution {
           nodes,
           result,
         );
+        FutureOr<GraphQLError?> check = guard?.checkType(runtime, context);
+        GraphQLError? denied = check is Future<GraphQLError?>
+            ? await check
+            : check;
+        if (denied != null) throw denied;
         return _object(runtime, nodes, path, result);
       case NonNullType():
         throw StateError('Unreachable: non-null is handled above.');

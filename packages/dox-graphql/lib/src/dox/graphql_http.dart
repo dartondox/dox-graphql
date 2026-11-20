@@ -6,7 +6,6 @@ import 'package:dox_core/dox_core.dart';
 import '../errors.dart';
 import '../executor.dart';
 import '../request.dart';
-import 'graphql_auth.dart';
 import 'graphql_context.dart';
 
 /// Answers the GraphQL route, as the GraphQL-over-HTTP spec says.

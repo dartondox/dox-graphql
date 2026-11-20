@@ -1,7 +1,5 @@
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_graphql/dox_graphql.dart';
-// TODO: use dox_core IAuthMiddleware, then drop this import.
-import 'package:dox_graphql/src/dox/graphql_auth.dart' show IAuthMiddleware;
 
 import 'app.dart';
 
@@ -84,6 +82,57 @@ final ObjectType<Map<String, Object?>, DoxGraphQLContext> _shop =
       ],
     );
 
+/// A public type, for the union.
+final ObjectType<Map<String, Object?>, DoxGraphQLContext> _pub =
+    ObjectType<Map<String, Object?>, DoxGraphQLContext>(
+      'Pub',
+      fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
+        Field<Map<String, Object?>, DoxGraphQLContext>('name', graphqlString),
+      ],
+    );
+
+/// A union with a protected member.
+final UnionType _foundType = UnionType('Found', <ObjectType<Object?, Object?>>[
+  _account,
+  _pub,
+]);
+
+final InterfaceType _thing = InterfaceType(
+  'Thing',
+  fields: () => <Field<Object?, Object?>>[
+    Field<Object?, Object?>('id', graphqlString),
+  ],
+);
+
+/// An interface type with a protected and a public implementation.
+final ObjectType<Map<String, Object?>, DoxGraphQLContext> _secretThing =
+    ObjectType<Map<String, Object?>, DoxGraphQLContext>(
+      'SecretThing',
+      auth: true,
+      interfaces: <InterfaceType>[_thing],
+      fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
+        Field<Map<String, Object?>, DoxGraphQLContext>('id', graphqlString),
+        Field<Map<String, Object?>, DoxGraphQLContext>('code', graphqlString),
+      ],
+    );
+
+final ObjectType<Map<String, Object?>, DoxGraphQLContext> _openThing =
+    ObjectType<Map<String, Object?>, DoxGraphQLContext>(
+      'OpenThing',
+      interfaces: <InterfaceType>[_thing],
+      fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
+        Field<Map<String, Object?>, DoxGraphQLContext>('id', graphqlString),
+      ],
+    );
+
+/// The value of `find` and `node` for [id]: protected for `a`.
+Map<String, Object?> _value(String id) => switch (id) {
+  'a' => <String, Object?>{'__typename': 'Account', 'email': 'a@x'},
+  's' => <String, Object?>{'__typename': 'SecretThing', 'id': 's', 'code': 'c'},
+  'o' => <String, Object?>{'__typename': 'OpenThing', 'id': 'o'},
+  _ => <String, Object?>{'__typename': 'Pub', 'name': 'p'},
+};
+
 final GraphQLSchema<DoxGraphQLContext> authSchema =
     GraphQLSchema<DoxGraphQLContext>(
       query: ObjectType<Object?, DoxGraphQLContext>(
@@ -126,6 +175,29 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
                 <String, Object?>{'email': 'a@x'},
           ),
           Field<Object?, DoxGraphQLContext>(
+            'find',
+            _foundType,
+            auth: false,
+            args: <Argument>[Argument('id', graphqlString.nonNull)],
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                _value(info.args.get<String>('id')!),
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'finds',
+            _foundType.list,
+            auth: false,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                <Object?>[_value('p'), _value('a')],
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'node',
+            _thing,
+            auth: false,
+            args: <Argument>[Argument('id', graphqlString.nonNull)],
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                _value(info.args.get<String>('id')!),
+          ),
+          Field<Object?, DoxGraphQLContext>(
             'note',
             _note,
             auth: false,
@@ -145,6 +217,7 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           ),
         ],
       ),
+      types: <NamedType>[_secretThing, _openThing],
     );
 
 /// A root field with no `auth:`.

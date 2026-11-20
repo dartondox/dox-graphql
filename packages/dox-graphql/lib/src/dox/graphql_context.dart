@@ -1,7 +1,6 @@
 import 'package:dox_core/dox_core.dart';
 
 import '../data_loader.dart';
-import 'graphql_auth.dart';
 
 /// The context every resolver gets in a Dox app (`info.context`). One is
 /// made for each HTTP request.

@@ -10,8 +10,7 @@ export 'package:gql/ast.dart';
 export 'src/annotations.dart';
 export 'src/data_loader.dart';
 export 'src/dox/auto_field.dart';
-// TODO: export all of it when IAuthMiddleware comes from dox_core.
-export 'src/dox/graphql_auth.dart' show GraphQLAuth;
+export 'src/dox/graphql_auth.dart';
 export 'src/dox/graphql_config.dart';
 export 'src/dox/graphql_context.dart';
 export 'src/dox/graphql_dto.dart';

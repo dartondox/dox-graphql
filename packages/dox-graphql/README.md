@@ -162,7 +162,8 @@ Field<Object?, DoxGraphQLContext>(
 
 ### Login
 
-With the auth middleware (`AuthMiddleware()` of dox_auth) in
+The auth middleware is any `IAuthMiddleware` of dox_core, like
+`AuthMiddleware()` of dox_auth. With it in
 `middleware`, fields need a logged-in user by default. Without it,
 every field is public. `auth:` changes this:
 
@@ -180,7 +181,8 @@ class User extends UserGenerator {}
 Which fields need a login:
 
 1. A field that gives a type with `auth: true`. This covers the model
-   queries, relations (like `post.user`) and custom resolvers.
+   queries, relations (like `post.user`), custom resolvers, and an
+   interface or union field whose value is of that type.
 2. Else, a field with `auth:` uses it.
 3. Else, a field that gives a type with `auth: false` is public.
 4. Else, a query or mutation field, and a field that gives an object

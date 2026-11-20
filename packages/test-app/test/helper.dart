@@ -2,9 +2,6 @@ import 'package:dox_auth/dox_auth.dart' show Gate;
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
-// TODO: use dox_core IAuthMiddleware, then drop this import.
-// ignore: implementation_imports
-import 'package:dox_graphql/src/dox/graphql_auth.dart' show IAuthMiddleware;
 import 'package:dox_graphql_test_app/generated/container.g.dart';
 import 'package:dox_graphql_test_app/generated/dtos.g.dart';
 import 'package:dox_graphql_test_app/app/models/article/article.model.dart';

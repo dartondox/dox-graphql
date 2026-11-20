@@ -157,8 +157,69 @@ void main() {
 
   test('count gives the public and login fields', () {
     GraphQLAuth auth = GraphQLAuth(authSchema, loginByDefault: true);
-    // public: open, autoOpen, note, shop. login: me, count, account,
-    // write, Shop.owner.
-    expect(auth.count(), (4, 5));
+    // public: open, autoOpen, find, finds, node, note, shop. login: me,
+    // count, account, write, Shop.owner.
+    expect(auth.count(), (7, 5));
+  });
+
+  group('a union or interface with a protected type |', () {
+    const String union =
+        '{ find(id: "ID") { ... on Account { email } '
+        '... on Pub { name } } }';
+    const String node = '{ node(id: "ID") { id ... on SecretThing { code } } }';
+
+    test('a guest gets UNAUTHENTICATED for the protected type', () async {
+      TestResponse res = await send(union.replaceFirst('ID', 'a'));
+      expect(res.json['data'], <String, Object?>{'find': null});
+      expect(res.json['errors'][0]['path'], <Object?>['find']);
+      expect(res.json['errors'][0]['extensions'], <String, Object?>{
+        'code': 'UNAUTHENTICATED',
+      });
+      res = await send(node.replaceFirst('ID', 's'));
+      expect(res.json['data'], <String, Object?>{'node': null});
+      expect(res.json['errors'][0]['extensions'], <String, Object?>{
+        'code': 'UNAUTHENTICATED',
+      });
+    });
+
+    test('a guest still gets the public types', () async {
+      TestResponse res = await send(union.replaceFirst('ID', 'p'));
+      expect(res.json, <String, Object?>{
+        'data': <String, Object?>{
+          'find': <String, Object?>{'name': 'p'},
+        },
+      });
+      res = await send(node.replaceFirst('ID', 'o'));
+      expect(res.json, <String, Object?>{
+        'data': <String, Object?>{
+          'node': <String, Object?>{'id': 'o'},
+        },
+      });
+      res = await send(
+        '{ finds { ... on Pub { name } ... on Account { email } } }',
+      );
+      expect(res.json['data'], <String, Object?>{
+        'finds': <Object?>[
+          <String, Object?>{'name': 'p'},
+          null,
+        ],
+      });
+      expect(res.json['errors'][0]['path'], <Object?>['finds', 1]);
+    });
+
+    test('a logged-in user gets the data', () async {
+      TestResponse res = await send(union.replaceFirst('ID', 'a'), good);
+      expect(res.json, <String, Object?>{
+        'data': <String, Object?>{
+          'find': <String, Object?>{'email': 'a@x'},
+        },
+      });
+      res = await send(node.replaceFirst('ID', 's'), good);
+      expect(res.json, <String, Object?>{
+        'data': <String, Object?>{
+          'node': <String, Object?>{'id': 's', 'code': 'c'},
+        },
+      });
+    });
   });
 }
