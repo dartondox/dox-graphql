@@ -3,6 +3,7 @@ import 'package:build/build.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:glob/glob.dart';
 
+import 'schema_model.dart';
 import 'schema_reader.dart';
 import 'schema_writer.dart';
 
@@ -15,8 +16,8 @@ import 'schema_writer.dart';
 ///   the resolvers.
 ///
 /// A type that GraphQL can not show stops the build with an error that
-/// names the class and the member. Nothing is written when the package
-/// has none of these classes.
+/// names the class and the member. When the package has none of these
+/// classes, the schema has one placeholder query, so it is still valid.
 class GraphQLSchemaBuilder implements Builder {
   const GraphQLSchemaBuilder();
 
@@ -61,9 +62,14 @@ class GraphQLSchemaBuilder implements Builder {
         if (SchemaReader.isResolver(element)) resolvers.add(element);
       }
     }
-    if (types.isEmpty && resolvers.isEmpty) return;
 
     SchemaReader reader = SchemaReader(Imports());
+    if (types.isEmpty && resolvers.isEmpty) {
+      // The app has nothing yet (`dox add graphql` just ran). A schema needs
+      // one query field, so it gets a placeholder. It goes away with the
+      // first real query.
+      reader.query.add(_placeholder);
+    }
     for (ClassElement element in types) {
       reader.addType(element);
     }
@@ -86,6 +92,16 @@ class GraphQLSchemaBuilder implements Builder {
       formatter.format(code),
     );
   }
+
+  static final FieldSpec _placeholder = FieldSpec(
+    name: 'placeholder',
+    type: 'graphqlBoolean.nonNull',
+    resolve: 'true',
+    where: 'Query.placeholder',
+    description:
+        'A placeholder, there is no other query yet. Add @GraphQLQuery() '
+        'to a method or @GraphQLType() to a model, then run the builder.',
+  );
 
   static int _byPath(AssetId a, AssetId b) => a.path.compareTo(b.path);
 }
