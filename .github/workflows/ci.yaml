@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [dox-graphql]
+        package: [dox-graphql, dox-graphql-builder, test-app]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,12 +48,21 @@ jobs:
           sdk: stable
       - name: Resolve the workspace
         run: dart pub get
+      # test-app holds the code the builders made: it must be the code
+      # they make now
+      - name: Generated code is up to date
+        if: matrix.package == 'test-app'
+        working-directory: packages/test-app
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          git diff --exit-code -- . || { echo "::error::run dart run build_runner build in packages/test-app"; exit 1; }
       - name: Dart tests
         working-directory: packages/${{ matrix.package }}
         run: dart test --concurrency=4
       # 65 = warnings only (like a CHANGELOG with only "Unreleased"): shown
       # as a warning. Any other error fails.
       - name: Publish dry run
+        if: matrix.package != 'test-app'
         working-directory: packages/${{ matrix.package }}
         run: |
           code=0

@@ -1,6 +1,7 @@
 import 'package:dox_core/dox_core.dart';
 
 import '../executor.dart';
+import 'auto_field.dart';
 import 'graphql_config.dart';
 import 'graphql_context.dart';
 import 'graphql_http.dart';
@@ -28,7 +29,9 @@ class GraphQLProvider extends DoxProvider {
     bool dev = Dox().config.isDevelopment;
     GraphQLExecutor<DoxGraphQLContext> executor =
         GraphQLExecutor<DoxGraphQLContext>(
-          config.schema,
+          config.autoResolvers
+              ? config.schema
+              : AutoField.leaveOut(config.schema),
           introspection: config.introspection ?? dev,
           showInternalErrors: config.showInternalErrors ?? dev,
           rules: config.rules,

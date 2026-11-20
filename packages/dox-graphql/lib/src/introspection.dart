@@ -127,7 +127,7 @@ final class Introspection {
     description: 'An enum describing what kind of type a given `__Type` is.',
   );
 
-  static String _kind(GraphQLType t) => switch (t) {
+  static String _kind(GraphQLTypeRef t) => switch (t) {
     ScalarType<Object>() => 'SCALAR',
     ObjectType<Object?, Object?>() => 'OBJECT',
     InterfaceType() => 'INTERFACE',
@@ -144,8 +144,8 @@ final class Introspection {
   static bool _withDeprecated(ResolveInfo<Object?> i) =>
       i.args.get<bool>('includeDeprecated') ?? false;
 
-  static final ObjectType<GraphQLType, Object?> typeType =
-      ObjectType<GraphQLType, Object?>(
+  static final ObjectType<GraphQLTypeRef, Object?> typeType =
+      ObjectType<GraphQLTypeRef, Object?>(
         '__Type',
         description:
             'The fundamental unit of any GraphQL Schema is the type. There '
@@ -154,36 +154,36 @@ final class Introspection {
         fields: _typeFields,
       );
 
-  static List<Field<GraphQLType, Object?>> _typeFields() {
-    return <Field<GraphQLType, Object?>>[
-      Field<GraphQLType, Object?>(
+  static List<Field<GraphQLTypeRef, Object?>> _typeFields() {
+    return <Field<GraphQLTypeRef, Object?>>[
+      Field<GraphQLTypeRef, Object?>(
         'kind',
         typeKind.nonNull,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) => _kind(t),
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) => _kind(t),
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'name',
         graphqlString,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) =>
             t is NamedType ? t.name : null,
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'description',
         graphqlString,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) =>
             t is NamedType ? t.description : null,
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'specifiedByURL',
         graphqlString,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) =>
             t is ScalarType<Object> ? t.specifiedByUrl : null,
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'fields',
         fieldType.nonNull.list,
         args: <Argument>[_includeDeprecated()],
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) {
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) {
           List<Field<Object?, Object?>>? fields = switch (t) {
             ObjectType<Object?, Object?>() => t.fields,
             InterfaceType() => t.fields,
@@ -196,26 +196,26 @@ final class Introspection {
           ];
         },
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'interfaces',
         typeType.nonNull.list,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) => switch (t) {
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) => switch (t) {
           ObjectType<Object?, Object?>() => t.interfaces,
           InterfaceType() => t.interfaces,
           _ => null,
         },
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'possibleTypes',
         typeType.nonNull.list,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) =>
             t is NamedType && t.isAbstract ? i.schema.possibleTypes(t) : null,
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'enumValues',
         enumValueType.nonNull.list,
         args: <Argument>[_includeDeprecated()],
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) {
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) {
           if (t is! EnumType<Object?>) return null;
           return <EnumValue<Object?>>[
             for (EnumValue<Object?> v in t.values)
@@ -223,11 +223,11 @@ final class Introspection {
           ];
         },
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'inputFields',
         inputValueType.nonNull.list,
         args: <Argument>[_includeDeprecated()],
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) {
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) {
           if (t is! InputObjectType) return null;
           return <InputField>[
             for (InputField f in t.fields)
@@ -235,19 +235,19 @@ final class Introspection {
           ];
         },
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'ofType',
         typeType,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) => switch (t) {
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) => switch (t) {
           ListType() => t.ofType,
           NonNullType() => t.ofType,
           _ => null,
         },
       ),
-      Field<GraphQLType, Object?>(
+      Field<GraphQLTypeRef, Object?>(
         'isOneOf',
         graphqlBoolean,
-        resolve: (GraphQLType t, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLTypeRef t, ResolveInfo<Object?> i) =>
             t is InputObjectType ? false : null,
       ),
     ];

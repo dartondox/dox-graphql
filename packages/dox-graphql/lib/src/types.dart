@@ -8,8 +8,8 @@ import 'errors.dart';
 import 'schema.dart';
 
 /// Any GraphQL type: a named type, or a list or non-null wrapper.
-sealed class GraphQLType {
-  const GraphQLType();
+sealed class GraphQLTypeRef {
+  const GraphQLTypeRef();
 
   /// A list of this type: `[T]`.
   ListType get list => ListType(this);
@@ -21,7 +21,7 @@ sealed class GraphQLType {
   NamedType get namedType;
 
   /// This type without the outer non-null wrapper.
-  GraphQLType get nullable => this;
+  GraphQLTypeRef get nullable => this;
 
   /// True for scalars, enums, input objects and wrappers of them.
   bool get isInputType;
@@ -31,10 +31,10 @@ sealed class GraphQLType {
 }
 
 /// A list wrapper: `[T]`.
-final class ListType extends GraphQLType {
+final class ListType extends GraphQLTypeRef {
   ListType(this.ofType);
 
-  final GraphQLType ofType;
+  final GraphQLTypeRef ofType;
 
   @override
   NamedType get namedType => ofType.namedType;
@@ -56,20 +56,20 @@ final class ListType extends GraphQLType {
 }
 
 /// A non-null wrapper: `T!`.
-final class NonNullType extends GraphQLType {
+final class NonNullType extends GraphQLTypeRef {
   NonNullType(this.ofType) {
     if (ofType is NonNullType) {
       throw ArgumentError('A non-null type cannot wrap a non-null type.');
     }
   }
 
-  final GraphQLType ofType;
+  final GraphQLTypeRef ofType;
 
   @override
   NonNullType get nonNull => this;
 
   @override
-  GraphQLType get nullable => ofType;
+  GraphQLTypeRef get nullable => ofType;
 
   @override
   NamedType get namedType => ofType.namedType;
@@ -93,7 +93,7 @@ final class NonNullType extends GraphQLType {
 
 /// A type with a name. Two named types are equal only when they are the
 /// same object.
-sealed class NamedType extends GraphQLType {
+sealed class NamedType extends GraphQLTypeRef {
   NamedType(this.name, {this.description});
 
   final String name;
@@ -225,7 +225,7 @@ final class Argument {
   });
 
   final String name;
-  final GraphQLType type;
+  final GraphQLTypeRef type;
   final String? description;
 
   /// The default as GraphQL literal text, like `10`, `"hi"`, `NEWHOPE`,
@@ -287,7 +287,7 @@ class Field<S, C> {
   });
 
   final String name;
-  final GraphQLType type;
+  final GraphQLTypeRef type;
   final String? description;
   final List<Argument> args;
   final String? deprecationReason;
@@ -343,7 +343,7 @@ final class ResolveInfo<C> {
   /// the same field twice. Useful to look ahead at the sub selection.
   final List<FieldNode> fieldNodes;
   final ObjectType<Object?, Object?> parentType;
-  final GraphQLType returnType;
+  final GraphQLTypeRef returnType;
   final GraphQLSchema<Object?> schema;
   final OperationDefinitionNode operation;
   final Map<String, FragmentDefinitionNode> fragments;

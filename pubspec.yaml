@@ -9,3 +9,5 @@ environment:
 # own release tag (<package>-v<version>).
 workspace:
   - packages/dox-graphql
+  - packages/dox-graphql-builder
+  - packages/test-app

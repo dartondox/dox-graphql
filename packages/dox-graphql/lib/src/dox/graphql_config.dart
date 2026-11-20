@@ -20,6 +20,7 @@ class GraphQLConfig {
     this.introspection,
     this.showInternalErrors,
     this.graphiql,
+    this.autoResolvers = true,
     this.rules = const <ValidationRule>[],
     this.maxDepth = GraphQLExecutor.defaultMaxDepth,
     this.maxQueryLength = GraphQLExecutor.defaultMaxQueryLength,
@@ -51,6 +52,12 @@ class GraphQLConfig {
   /// The GraphiQL page at [path], for a browser. Null (default): on when
   /// `APP_ENV` is `development`, else off.
   final bool? graphiql;
+
+  /// The list, find, create, update and delete fields that
+  /// `dox_graphql_builder` makes for models. False leaves them out, so
+  /// the app has only its own `@Query` and `@Mutation` resolvers. The
+  /// model types stay, for relations and resolvers.
+  final bool autoResolvers;
 
   /// Extra validation rules, run after the rules of the spec.
   final List<ValidationRule> rules;

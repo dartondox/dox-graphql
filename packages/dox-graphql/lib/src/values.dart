@@ -34,14 +34,14 @@ final class Values {
 
   /// The type that a type node in the query names, or null when a named
   /// type is not in the schema.
-  static GraphQLType? typeFromAst(
+  static GraphQLTypeRef? typeFromAst(
     GraphQLSchema<Object?> schema,
     TypeNode node,
   ) {
-    GraphQLType? inner = switch (node) {
+    GraphQLTypeRef? inner = switch (node) {
       NamedTypeNode() => schema.type(node.name.value),
       ListTypeNode() => switch (typeFromAst(schema, node.type)) {
-        GraphQLType t => ListType(t),
+        GraphQLTypeRef t => ListType(t),
         null => null,
       },
       _ => null,
@@ -53,7 +53,7 @@ final class Values {
   /// Coerces a literal. [variables] are the coerced variables, or null in
   /// a const place. Returns [invalid] when the literal does not fit.
   static Object? fromLiteral(
-    GraphQLType type,
+    GraphQLTypeRef type,
     ValueNode node,
     Map<String, Object?>? variables,
   ) {
@@ -71,7 +71,7 @@ final class Values {
       case _ when node is NullValueNode:
         return null;
       case ListType():
-        GraphQLType itemType = type.ofType;
+        GraphQLTypeRef itemType = type.ofType;
         if (node is! ListValueNode) {
           Object? item = fromLiteral(itemType, node, variables);
           return identical(item, invalid) ? invalid : <Object?>[item];
@@ -139,7 +139,7 @@ final class Values {
   }
 
   /// Coerces a JSON value from the request. Throws [_CoerceError].
-  static Object? _fromJson(GraphQLType type, Object? value, String at) {
+  static Object? _fromJson(GraphQLTypeRef type, Object? value, String at) {
     if (type is NonNullType) {
       if (value == null) {
         throw _CoerceError(
@@ -226,7 +226,7 @@ final class Values {
     List<GraphQLError> errors = <GraphQLError>[];
     for (VariableDefinitionNode def in operation.variableDefinitions) {
       String name = def.variable.name.value;
-      GraphQLType? type = typeFromAst(schema, def.type);
+      GraphQLTypeRef? type = typeFromAst(schema, def.type);
       if (type == null || !type.isInputType) {
         errors.add(
           GraphQLError.at(

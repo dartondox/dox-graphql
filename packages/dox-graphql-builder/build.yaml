@@ -1,0 +1,9 @@
+builders:
+  # lib/generated/schema.g.dart: the GraphQL schema of the app, for
+  # GraphQLConfig(schema: graphqlSchema) of dox_graphql
+  schema:
+    import: "package:dox_graphql_builder/dox_graphql_builder.dart"
+    builder_factories: ["graphqlSchemaBuilder"]
+    build_extensions: { "$lib$": ["generated/schema.g.dart"] }
+    auto_apply: dependents
+    build_to: source
