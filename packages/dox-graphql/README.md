@@ -43,13 +43,29 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   with `policy:`.
 - `owner: 'userId'` makes `createPost` set `userId` to the logged-in
   user. Create then needs a login.
-- When the policy has a `viewAny`, `view` or `create` method, the list
-  query, the find query and `createPost` ask it too. A relation to
-  `Post` asks `viewAny`. A denied user gets `FORBIDDEN`, and a guest
-  gets `UNAUTHENTICATED`.
+- The policy can also guard the reads and the create. GraphQL uses only
+  methods with these exact names:
+  - `viewAny(user)`: the list query and each relation to `Post` ask it
+    first. When denied, the field is null with `FORBIDDEN`.
+  - `view(user, post)`: the find query asks it on the row. The list query
+    and the relations drop the rows that it denies, with no error. A
+    single relation becomes null. Thus a list can have fewer rows than
+    `limit`.
+  - `create(user)`: `createPost` asks it before it saves.
+  - A denied guest gets `UNAUTHENTICATED`, a denied user `FORBIDDEN`. A
+    method with a different name is not used, also when `abilities`
+    lists it.
+- Find, update and delete check a missing id as a new, empty `Post`. A
+  user that the policy denies gets the same error for an id that exists
+  and an id that does not exist. If your `view`, `update` or `delete`
+  allows an empty row (for example `!post.isPrivate`), a client can see
+  which ids exist. Deny an empty row if this is a problem.
 - In a resolver, read the user with `await info.context.user<User>()`.
 - A query can have at most 50 top-level fields (`maxRootFields`). Aliases
   count.
+- A list relation, like `posts { comments }`, reads at most 50,000 rows
+  for all posts of the request (`maxRelationRows`). More rows give an
+  error. Change it in `GraphQLConfig`.
 
 ### Auth middleware
 

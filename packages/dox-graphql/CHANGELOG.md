@@ -4,6 +4,9 @@
   default. It is the maximum number of top-level fields in one
   operation, after fragments are expanded. Each alias counts. A query
   with more fields gets an error, and no resolver runs.
+- New: `maxRelationRows` in `GraphQLConfig`, 50,000 by default. It is
+  the maximum number of rows that one list relation loads for all
+  parents at one level. More rows give an error.
 - `GraphQLAuth.unauthenticatedError()` gives the `UNAUTHENTICATED` error.
 - `dox add graphql` writes a commented
   `// middleware: <Object>[AuthMiddleware()],` line in

@@ -30,8 +30,9 @@ Future<void> _allow(
 
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
-/// answer does not show which ids exist. A policy that throws on the
-/// blank row denies.
+/// answer does not show which ids exist. A policy that fails to read the
+/// empty row (a null check, a missing value) denies. Other errors, like a
+/// database error, are thrown.
 Future<void> _allowMissing(
   ResolveInfo<$_context> info,
   String ability,
@@ -41,10 +42,40 @@ Future<void> _allowMissing(
   bool allowed;
   try {
     allowed = await Gate.allows(user, ability, blank);
-  } catch (_) {
+  } on TypeError {
+    allowed = false;
+  } on StateError {
+    allowed = false;
+  } on NoSuchMethodError {
     allowed = false;
   }
   if (!allowed) throw _denied(user);
+}
+
+/// The rows of [rows] that the `view` ability of the policy allows. The
+/// others are left out, with no error.
+Future<List<T>?> _viewList<T extends Object>(
+  ResolveInfo<$_context> info,
+  Future<List<T>?> rows,
+) async {
+  List<T>? list = await rows;
+  if (list == null || list.isEmpty) return list;
+  Object? user = await info.context.user<Object>();
+  return <T>[
+    for (T row in list)
+      if (await Gate.allows(user, 'view', row)) row,
+  ];
+}
+
+/// [row] when the `view` ability of the policy allows it, else null.
+Future<T?> _viewOne<T extends Object>(
+  ResolveInfo<$_context> info,
+  Future<T?> row,
+) async {
+  T? value = await row;
+  if (value == null) return null;
+  Object? user = await info.context.user<Object>();
+  return await Gate.allows(user, 'view', value) ? value : null;
 }
 
 /// "Unauthenticated" before the row lookup, when the policy denies every

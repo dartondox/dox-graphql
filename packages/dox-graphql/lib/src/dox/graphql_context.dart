@@ -1,6 +1,7 @@
 import 'package:dox_core/dox_core.dart';
 
 import '../data_loader.dart';
+import 'graphql_config.dart';
 
 /// The context every resolver gets in a Dox app (`info.context`). One is
 /// made for each HTTP request.
@@ -19,6 +20,7 @@ class DoxGraphQLContext {
     this.request,
     this._container, {
     this._login = const <IAuthMiddleware>[],
+    this.maxRelationRows = GraphQLConfig.defaultMaxRelationRows,
   });
 
   /// The HTTP request.
@@ -27,6 +29,10 @@ class DoxGraphQLContext {
   final IocContainer _container;
 
   final List<IAuthMiddleware> _login;
+
+  /// The most rows one list relation can load in one batch. It comes
+  /// from `GraphQLConfig.maxRelationRows`.
+  final int maxRelationRows;
 
   /// The login of this request, read once.
   Future<IAuth?>? _auth;

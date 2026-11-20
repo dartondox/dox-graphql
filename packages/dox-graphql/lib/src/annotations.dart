@@ -55,9 +55,11 @@ class GraphQLType {
   /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
   /// usual. Without it, the model gets only the create mutation.
   ///
-  /// When the policy class has a `viewAny`, `view` or `create` method, the
-  /// list query asks `viewAny`, the find query asks `view`, a relation to
-  /// the model asks `viewAny`, and the create mutation asks `create`. A
+  /// When the policy class has a method named `viewAny`, `view` or
+  /// `create`, the list query asks `viewAny`, the find query asks `view`,
+  /// a relation to the model asks `viewAny`, and the create mutation asks
+  /// `create`. The list query and the relations drop the rows that `view`
+  /// denies, so a list can have fewer rows than `limit`. A
   /// denied guest gets "Unauthenticated", a denied user "Forbidden". A
   /// missing id is checked as a blank row, so a denied user gets the same
   /// error for an id that exists and one that does not.

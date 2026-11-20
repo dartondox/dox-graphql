@@ -380,9 +380,13 @@ class Post extends Model<Post> {
           ),
         ),
       );
+      // a database error on the blank row is not turned into FORBIDDEN
+      expect(out, contains(flat('} on TypeError { allowed = false; }')));
+      expect(out, isNot(contains('catch (_)')));
       // the policy has no viewAny, view or create: no read or create check
       expect(out, isNot(contains("_allow(info, 'viewAny'")));
-      expect(out, isNot(contains("'view'")));
+      expect(out, isNot(contains(flat("_allowMissing(info, 'view'"))));
+      expect(out, isNot(contains('_viewList<i1.Post>(info, GraphQLOrm')));
       expect(out, isNot(contains("_allow(info, 'create'")));
       expect(out, contains(flat('GraphQLOrm.list<i1.Post>(i1.Post(), info)')));
     });
@@ -426,7 +430,8 @@ class Blog extends Model<Blog> {
         contains(
           flat(
             "_allow(info, 'viewAny', i1.Post).then((_) => "
-            'GraphQLOrm.list<i1.Post>(i1.Post(), info))',
+            '_viewList<i1.Post>(info, GraphQLOrm.list<i1.Post>(i1.Post(), '
+            'info)))',
           ),
         ),
       );
@@ -464,8 +469,8 @@ class Blog extends Model<Blog> {
         contains(
           flat(
             "_allow(info, 'viewAny', i1.Post).then((_) => "
-            "GraphQLOrm.many<i1.Blog, i1.Post>(s, 'posts', info.context, "
-            '(i1.Blog p) => p.posts))',
+            '_viewList<i1.Post>(info, GraphQLOrm.many<i1.Blog, i1.Post>(s, '
+            "'posts', info.context, (i1.Blog p) => p.posts)))",
           ),
         ),
       );
@@ -474,8 +479,8 @@ class Blog extends Model<Blog> {
         contains(
           flat(
             "_allow(info, 'viewAny', i1.Post).then((_) => "
-            "GraphQLOrm.relation<i1.Blog, i1.Post?>(s, 'top', info.context, "
-            '(i1.Blog p) => p.top))',
+            '_viewOne<i1.Post>(info, GraphQLOrm.relation<i1.Blog, i1.Post?>('
+            "s, 'top', info.context, (i1.Blog p) => p.top)))",
           ),
         ),
       );

@@ -98,11 +98,19 @@ Future<void> setUpDatabase() async {
     table.string('title');
     table.string('owner').nullable();
     table.integer('account_id').nullable();
+    table.integer('parent_id').nullable();
     table.timestamps();
   });
   await QueryBuilder.table('docs').insertMany(<Map<String, dynamic>>[
-    <String, dynamic>{'title': 'Ann doc', 'owner': 'ann', 'account_id': 1},
+    // the parent of Ann doc is Bob doc, which ann may not view
+    <String, dynamic>{
+      'title': 'Ann doc',
+      'owner': 'ann',
+      'account_id': 1,
+      'parent_id': 2,
+    },
     <String, dynamic>{'title': 'Bob doc', 'owner': 'bob', 'account_id': 1},
+    <String, dynamic>{'title': 'Ann note', 'owner': 'ann', 'parent_id': 1},
   ]);
   await QueryBuilder.table('profiles').insertMany(<Map<String, dynamic>>[
     <String, dynamic>{'bio': 'Ada bio', 'user_id': 1},

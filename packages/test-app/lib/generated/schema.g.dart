@@ -91,11 +91,13 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('limit', graphqlInt, defaultValue: '20'),
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
-        resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => _allow(
-          info,
-          'viewAny',
-          i5.Doc,
-        ).then((_) => GraphQLOrm.list<i5.Doc>(i5.Doc(), info)),
+        resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+            _allow(info, 'viewAny', i5.Doc).then(
+              (_) => _viewList<i5.Doc>(
+                info,
+                GraphQLOrm.list<i5.Doc>(i5.Doc(), info),
+              ),
+            ),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'doc',
@@ -547,11 +549,14 @@ final ObjectType<i2.Account, DoxGraphQLContext> _tAccount =
               _tDoc.nonNull.list,
               resolve: (i2.Account s, ResolveInfo<DoxGraphQLContext> info) =>
                   _allow(info, 'viewAny', i5.Doc).then(
-                    (_) => GraphQLOrm.many<i2.Account, i5.Doc>(
-                      s,
-                      'docs',
-                      info.context,
-                      (i2.Account p) => p.docs,
+                    (_) => _viewList<i5.Doc>(
+                      info,
+                      GraphQLOrm.many<i2.Account, i5.Doc>(
+                        s,
+                        'docs',
+                        info.context,
+                        (i2.Account p) => p.docs,
+                      ),
                     ),
                   ),
             ),
@@ -657,49 +662,71 @@ final ObjectType<i4.Comment, DoxGraphQLContext> _tComment =
       },
     );
 
-final ObjectType<i5.Doc, DoxGraphQLContext> _tDoc =
-    ObjectType<i5.Doc, DoxGraphQLContext>(
-      'Doc',
-      description: 'Its policy has `viewAny`, `view` and `create`: the reads and the create\nask it too.',
-      auth: false,
-      fields: () {
-        i5.Doc model = i5.Doc();
-        List<String> hidden = model.hidden;
-        List<String> visible = model.visibleFields;
-        bool show(String name) =>
-            !hidden.contains(name) &&
-            (visible.isEmpty || visible.contains(name));
-        return <Field<i5.Doc, DoxGraphQLContext>>[
-          if (show('id'))
-            Field<i5.Doc, DoxGraphQLContext>(
-              'id',
-              graphqlId.nonNull,
-              resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) => s.id,
-            ),
-          if (show('title'))
-            Field<i5.Doc, DoxGraphQLContext>(
-              'title',
-              graphqlString,
-              resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.title,
-            ),
-          if (show('owner'))
-            Field<i5.Doc, DoxGraphQLContext>(
-              'owner',
-              graphqlString,
-              resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.owner,
-            ),
-          if (show('account_id'))
-            Field<i5.Doc, DoxGraphQLContext>(
-              'accountId',
-              graphqlInt,
-              resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.accountId,
-            ),
-        ];
-      },
-    );
+final ObjectType<i5.Doc, DoxGraphQLContext>
+_tDoc = ObjectType<i5.Doc, DoxGraphQLContext>(
+  'Doc',
+  description: 'Its policy has `viewAny`, `view` and `create`: the reads and the create\nask it too.',
+  auth: false,
+  fields: () {
+    i5.Doc model = i5.Doc();
+    List<String> hidden = model.hidden;
+    List<String> visible = model.visibleFields;
+    bool show(String name) =>
+        !hidden.contains(name) && (visible.isEmpty || visible.contains(name));
+    return <Field<i5.Doc, DoxGraphQLContext>>[
+      if (show('id'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'id',
+          graphqlId.nonNull,
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) => s.id,
+        ),
+      if (show('title'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'title',
+          graphqlString,
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) => s.title,
+        ),
+      if (show('owner'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'owner',
+          graphqlString,
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) => s.owner,
+        ),
+      if (show('account_id'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'accountId',
+          graphqlInt,
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
+              s.accountId,
+        ),
+      if (show('parent_id'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'parentId',
+          graphqlInt,
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
+              s.parentId,
+        ),
+      if (show('parent'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'parent',
+          _tDoc,
+          description: 'A single relation to a model whose policy has `view`.',
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
+              _allow(info, 'viewAny', i5.Doc).then(
+                (_) => _viewOne<i5.Doc>(
+                  info,
+                  GraphQLOrm.relation<i5.Doc, i5.Doc?>(
+                    s,
+                    'parent',
+                    info.context,
+                    (i5.Doc p) => p.parent,
+                  ),
+                ),
+              ),
+        ),
+    ];
+  },
+);
 
 final ObjectType<i6.Image, DoxGraphQLContext> _tImage =
     ObjectType<i6.Image, DoxGraphQLContext>(
@@ -1658,8 +1685,9 @@ Future<void> _allow(
 
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
-/// answer does not show which ids exist. A policy that throws on the
-/// blank row denies.
+/// answer does not show which ids exist. A policy that fails to read the
+/// empty row (a null check, a missing value) denies. Other errors, like a
+/// database error, are thrown.
 Future<void> _allowMissing(
   ResolveInfo<DoxGraphQLContext> info,
   String ability,
@@ -1669,10 +1697,40 @@ Future<void> _allowMissing(
   bool allowed;
   try {
     allowed = await Gate.allows(user, ability, blank);
-  } catch (_) {
+  } on TypeError {
+    allowed = false;
+  } on StateError {
+    allowed = false;
+  } on NoSuchMethodError {
     allowed = false;
   }
   if (!allowed) throw _denied(user);
+}
+
+/// The rows of [rows] that the `view` ability of the policy allows. The
+/// others are left out, with no error.
+Future<List<T>?> _viewList<T extends Object>(
+  ResolveInfo<DoxGraphQLContext> info,
+  Future<List<T>?> rows,
+) async {
+  List<T>? list = await rows;
+  if (list == null || list.isEmpty) return list;
+  Object? user = await info.context.user<Object>();
+  return <T>[
+    for (T row in list)
+      if (await Gate.allows(user, 'view', row)) row,
+  ];
+}
+
+/// [row] when the `view` ability of the policy allows it, else null.
+Future<T?> _viewOne<T extends Object>(
+  ResolveInfo<DoxGraphQLContext> info,
+  Future<T?> row,
+) async {
+  T? value = await row;
+  if (value == null) return null;
+  Object? user = await info.context.user<Object>();
+  return await Gate.allows(user, 'view', value) ? value : null;
 }
 
 /// "Unauthenticated" before the row lookup, when the policy denies every

@@ -65,21 +65,55 @@ void main() {
           ],
         });
         expect(_codes(res), <Object?>['FORBIDDEN']);
-        res = await run(client, '{ accounts { docs { title } } }', user: 'ann');
-        expect(res, <String, Object?>{
-          'data': <String, Object?>{
-            'accounts': <Object?>[
-              <String, Object?>{
-                'docs': <Object?>[
-                  <String, Object?>{'title': 'Ann doc'},
-                  <String, Object?>{'title': 'Bob doc'},
-                ],
-              },
-            ],
-          },
-        });
       },
     );
+  });
+
+  group('view on lists and relations |', () {
+    test('Bob doc is not visible to ann through any path', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ docs { title parent { title } } '
+        'accounts { docs { title parent { title } } } }',
+        user: 'ann',
+      );
+      // the list and the relations drop what `view` denies, with no
+      // error; the single relation to Bob doc is null
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{'title': 'Ann doc', 'parent': null},
+            <String, Object?>{
+              'title': 'Ann note',
+              'parent': <String, Object?>{'title': 'Ann doc'},
+            },
+          ],
+          'accounts': <Object?>[
+            <String, Object?>{
+              'docs': <Object?>[
+                <String, Object?>{'title': 'Ann doc', 'parent': null},
+              ],
+            },
+          ],
+        },
+      });
+      expect(res.toString(), isNot(contains('Bob doc')));
+    });
+
+    test('a list can give fewer rows than limit', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ docs(limit: 2) { title } }',
+        user: 'bob',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{'title': 'Bob doc'},
+          ],
+        },
+      });
+    });
   });
 
   group('view |', () {

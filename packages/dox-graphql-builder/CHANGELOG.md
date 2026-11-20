@@ -2,10 +2,12 @@
 
 - A policy with a `viewAny`, `view` or `create` method now guards the
   reads and the create. The list query asks `viewAny` before the query.
-  The find query asks `view` on the row. A relation to the model asks
+  The find query asks `view` on the row. The list query and the
+  relations drop the rows that `view` denies (a single relation becomes
+  null), so a list can have fewer rows than `limit`. A relation to the model asks
   `viewAny`, and gives null with `FORBIDDEN` when denied. `createPost`
-  asks `create` before it saves. A policy with no such method keeps the
-  old behavior.
+  asks `create` before it saves. Only methods with these exact names are
+  used. A policy with no such method keeps the old behavior.
 - A denied guest gets `UNAUTHENTICATED`, and a denied user gets
   `FORBIDDEN`. When the user type of the policy is not nullable, a guest
   is stopped before the row lookup.

@@ -36,6 +36,7 @@ class DocGenerator extends Model<Doc> {
     'title',
     'owner',
     'account_id',
+    'parent_id',
     'created_at',
     'updated_at',
   ];
@@ -44,11 +45,30 @@ class DocGenerator extends Model<Doc> {
   List<String> get preloadList => const <String>[];
 
   @override
-  Map<String, Function> get relationsResultMatcher =>
-      const <String, Function>{};
+  Map<String, Function> get relationsResultMatcher => const <String, Function>{
+    'parent': getParent,
+  };
 
   @override
-  Map<String, Function> get relationsQueryMatcher => const <String, Function>{};
+  Map<String, Function> get relationsQueryMatcher => const <String, Function>{
+    'parent': queryParent,
+  };
+
+  static Future<void> getParent(List<Model<Doc>> list) async {
+    var result = await getBelongsTo<Doc, Doc>(queryParent(list), list);
+    for (dynamic i in list) {
+      i.parent = result[i.tempIdValue.toString()];
+    }
+  }
+
+  static Doc? queryParent(List<Model<Doc>> list) {
+    return belongsTo<Doc, Doc>(
+      list,
+      () => Doc(),
+      foreignKey: 'parent_id',
+      relation: 'parent',
+    );
+  }
 
   @override
   Doc fromMap(Map<String, dynamic> m) => Doc()
@@ -56,6 +76,7 @@ class DocGenerator extends Model<Doc> {
     ..title = m['title'] as String?
     ..owner = m['owner'] as String?
     ..accountId = m['account_id'] as int?
+    ..parentId = m['parent_id'] as int?
     ..createdAt = switch (m['created_at']) {
       DateTime? v => v,
       Object? v => DateTime.parse(v as String),
@@ -72,6 +93,7 @@ class DocGenerator extends Model<Doc> {
       'title': instance.title,
       'owner': instance.owner,
       'account_id': instance.accountId,
+      'parent_id': instance.parentId,
       'created_at': instance.createdAt?.toIso8601String(),
       'updated_at': instance.updatedAt?.toIso8601String(),
     };
@@ -91,6 +113,8 @@ class DocGenerator extends Model<Doc> {
         return instance.owner;
       case 'account_id':
         return instance.accountId;
+      case 'parent_id':
+        return instance.parentId;
       case 'created_at':
         return instance.createdAt?.toIso8601String();
       case 'updated_at':
@@ -103,6 +127,11 @@ class DocGenerator extends Model<Doc> {
   Map<String, dynamic> convertToMap(dynamic i) {
     Doc instance = i as Doc;
     Map<String, dynamic> map = instance.columnsToMap();
+
+    List<String> preload = getPreload();
+    if (preload.contains('parent')) {
+      map['parent'] = toMap(instance.parent);
+    }
 
     return map;
   }
@@ -127,6 +156,10 @@ class DocGenerator extends Model<Doc> {
         if (value is! int?) return false;
         instance.accountId = value;
         return true;
+      case 'parent_id':
+        if (value is! int?) return false;
+        instance.parentId = value;
+        return true;
       case 'created_at':
         if (value is! DateTime?) return false;
         instance.createdAt = value;
@@ -147,6 +180,7 @@ class DocGenerator extends Model<Doc> {
       ..title = o.title
       ..owner = o.owner
       ..accountId = o.accountId
+      ..parentId = o.parentId
       ..createdAt = o.createdAt
       ..updatedAt = o.updatedAt;
     return true;

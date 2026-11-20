@@ -19,4 +19,11 @@ class Doc extends DocGenerator {
 
   @Column()
   int? accountId;
+
+  @Column()
+  int? parentId;
+
+  /// A single relation to a model whose policy has `view`.
+  @BelongsTo(Doc, foreignKey: 'parent_id')
+  Doc? parent;
 }

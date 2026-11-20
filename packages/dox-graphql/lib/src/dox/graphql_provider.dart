@@ -63,6 +63,7 @@ class GraphQLProvider extends DoxProvider {
       graphiql: config.graphiql ?? dev,
       path: config.path,
       logins: logins,
+      maxRelationRows: config.maxRelationRows,
     );
   }
 

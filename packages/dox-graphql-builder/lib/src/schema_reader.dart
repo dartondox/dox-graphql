@@ -416,8 +416,15 @@ class SchemaReader {
     }
     Element? element = related is InterfaceType ? related.element : null;
     ObjectSpec? target = objects[element];
-    if (target == null || !target.abilities.contains('viewAny')) return code;
+    if (target == null) return code;
     String relatedModel = imports.nonNullCode(related);
+    // `view` drops the related rows it denies; a single one becomes null
+    if (target.abilities.contains('view')) {
+      code = identical(related, type)
+          ? '_viewOne<$relatedModel>(info, $code)'
+          : '_viewList<$relatedModel>(info, $code)';
+    }
+    if (!target.abilities.contains('viewAny')) return code;
     return "_allow(info, 'viewAny', $relatedModel).then((_) => $code)";
   }
 
@@ -437,6 +444,11 @@ class SchemaReader {
     String guest = spec.guestsDenied ? '\n  await _login(info);' : '';
     String list = 'GraphQLOrm.list<$model>($model(), info)';
     String find = 'GraphQLOrm.find<$model>($model(), $id)';
+    // `view` drops the rows it denies, so a list can have fewer rows than
+    // `limit`
+    if (spec.abilities.contains('view')) {
+      list = '_viewList<$model>(info, $list)';
+    }
     if (spec.queries && spec.abilities.contains('viewAny')) {
       list = "_allow(info, 'viewAny', $model).then((_) => $list)";
     }

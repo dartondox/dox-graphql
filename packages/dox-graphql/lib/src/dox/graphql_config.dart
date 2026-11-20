@@ -27,6 +27,7 @@ class GraphQLConfig {
     this.maxFields = GraphQLExecutor.defaultMaxFields,
     this.maxNodes = GraphQLExecutor.defaultMaxNodes,
     this.maxRootFields = GraphQLExecutor.defaultMaxRootFields,
+    this.maxRelationRows = defaultMaxRelationRows,
     this.maxErrors = GraphQLExecutor.defaultMaxErrors,
   });
 
@@ -85,6 +86,16 @@ class GraphQLConfig {
 
   /// See `GraphQLExecutor.maxRootFields`.
   final int maxRootFields;
+
+  /// The default of [maxRelationRows]: 50,000.
+  static const int defaultMaxRelationRows = 50000;
+
+  /// The most rows one list relation of a model (like `Post.comments`)
+  /// loads in one batch. A batch is all parents of the request at one
+  /// level, so `posts(limit: 100) { comments }` reads the comments of 100
+  /// posts in one query. The query has `LIMIT maxRelationRows + 1`: more
+  /// rows give an error, and the table is never read whole.
+  final int maxRelationRows;
 
   /// See `GraphQLExecutor.maxErrors`.
   final int maxErrors;

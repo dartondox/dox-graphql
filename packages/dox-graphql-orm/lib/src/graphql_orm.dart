@@ -9,12 +9,6 @@ class GraphQLOrm {
   /// The most rows one list query can read.
   static const int maxLimit = 100;
 
-  /// The most rows one list relation (like `Post.comments`) can read in
-  /// one batch: for all parents of a request at one level. The query
-  /// asks for one row more, so a bigger relation fails with an error and
-  /// never loads the whole table. Page a big relation in a resolver.
-  static const int maxRelationRows = 10000;
-
   /// The rows of the list query: `posts(limit: Int = 20, offset: Int = 0)`.
   /// A [limit] above [maxLimit] is an error, so one query can not read
   /// the whole table.
@@ -65,8 +59,9 @@ class GraphQLOrm {
   /// `HasManyThrough`, `MorphMany`), read with [read] when preloaded.
   ///
   /// Like [relation], it loads every parent of the request in one batch.
-  /// The batch query has `LIMIT maxRelationRows + 1`: more rows than
-  /// [maxRelationRows] is an error. [pivot] is true for `ManyToMany`.
+  /// The batch query has `LIMIT maxRelationRows + 1`, with
+  /// `GraphQLConfig.maxRelationRows`: more rows is an error. [pivot] is
+  /// true for `ManyToMany`.
   static Future<List<R>?> many<P extends Model<P>, R>(
     P parent,
     String name,
@@ -78,7 +73,8 @@ class GraphQLOrm {
     DataLoader<P, List<R>> loader = context.loader<P, List<R>>(
       'dox_graphql_orm:many:$P.$name',
       () => DataLoader<P, List<R>>(
-        (List<P> parents) => _loadMany<P, R>(parents, name, pivot),
+        (List<P> parents) =>
+            _loadMany<P, R>(parents, name, pivot, context.maxRelationRows),
       ),
     );
     return (await loader.load(parent)) ?? <R>[];
@@ -88,6 +84,7 @@ class GraphQLOrm {
     List<P> parents,
     String name,
     bool pivot,
+    int maxRows,
   ) async {
     Function? query = parents.first.relationsQueryMatcher[name];
     if (query == null) {
@@ -99,7 +96,7 @@ class GraphQLOrm {
     ]);
     Map<String, List<R>> rows = <String, List<R>>{};
     if (q is QueryBuilder<Object?>) {
-      q.limit(maxRelationRows + 1);
+      q.limit(maxRows + 1);
       rows = pivot
           ? await getManyToMany<P, R>(q, parents)
           : await getHasMany<P, R>(q, parents);
@@ -108,10 +105,11 @@ class GraphQLOrm {
     for (List<R> list in rows.values) {
       count += list.length;
     }
-    if (count > maxRelationRows) {
+    if (count > maxRows) {
       throw GraphQLError(
-        'The relation $P.$name has more than $maxRelationRows rows for this '
-        'request. Ask for fewer parents, or page it in a resolver.',
+        'The relation $P.$name has more than $maxRows rows for this '
+        'request (GraphQLConfig.maxRelationRows). Ask for fewer parents, '
+        'or page it in a resolver.',
       );
     }
     return <List<R>>[
