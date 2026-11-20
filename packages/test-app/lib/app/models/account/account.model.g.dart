@@ -44,11 +44,25 @@ class AccountGenerator extends Model<Account> {
   List<String> get preloadList => const <String>[];
 
   @override
-  Map<String, Function> get relationsResultMatcher =>
-      const <String, Function>{};
+  Map<String, Function> get relationsResultMatcher => const <String, Function>{
+    'docs': getDocs,
+  };
 
   @override
-  Map<String, Function> get relationsQueryMatcher => const <String, Function>{};
+  Map<String, Function> get relationsQueryMatcher => const <String, Function>{
+    'docs': queryDocs,
+  };
+
+  static Future<void> getDocs(List<Model<Account>> list) async {
+    var result = await getHasMany<Account, Doc>(queryDocs(list), list);
+    for (dynamic i in list) {
+      i.docs = result[i.tempIdValue.toString()] ?? <Doc>[];
+    }
+  }
+
+  static Doc? queryDocs(List<Model<Account>> list) {
+    return hasMany<Account, Doc>(list, () => Doc());
+  }
 
   @override
   Account fromMap(Map<String, dynamic> m) => Account()
@@ -103,6 +117,11 @@ class AccountGenerator extends Model<Account> {
   Map<String, dynamic> convertToMap(dynamic i) {
     Account instance = i as Account;
     Map<String, dynamic> map = instance.columnsToMap();
+
+    List<String> preload = getPreload();
+    if (preload.contains('docs')) {
+      map['docs'] = toMap(instance.docs);
+    }
 
     return map;
   }

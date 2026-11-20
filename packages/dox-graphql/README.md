@@ -43,6 +43,41 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   with `policy:`.
 - `owner: 'userId'` makes `createPost` set `userId` to the logged-in
   user. Create then needs a login.
+- The policy can also guard the reads and the create. GraphQL asks Gate
+  at run time which abilities the registered policy lists in
+  `abilities`. The keys must be `viewAny`, `view` and `create`. The
+  method names do not matter:
+  - `viewAny(user)`: the list query and each relation to `Post` ask it
+    first. When denied, the field is null with `FORBIDDEN`.
+  - `view(user, post)`: the find query asks it on the row. The list query
+    and the relations drop the rows that it denies, with no error. A
+    single relation becomes null. Thus a list can have fewer rows than
+    `limit`.
+  - `create(user)`: `createPost` asks it before it saves.
+  - A denied guest gets `UNAUTHENTICATED`, a denied user `FORBIDDEN`.
+  - These checks run only in the code that the builder makes (the list,
+    find and create fields, and the relations of models). Your own
+    `@GraphQLQuery`, `@ResolveField` and getters of plain classes that
+    give a model do not run `view` or `viewAny`. Call
+    `Gate.allows(user, 'view', post)` yourself there.
+- Find, update and delete check a missing id as a new, empty `Post`. A
+  user that the policy denies gets the same error for an id that exists
+  and an id that does not exist. If your `view`, `update` or `delete`
+  allows an empty row (for example `!post.isPrivate`), a client can see
+  which ids exist. Deny an empty row if this is a problem.
 - In a resolver, read the user with `await info.context.user<User>()`.
+- A query can have at most 50 top-level fields (`maxRootFields`). Aliases
+  count.
+- A list relation, like `posts { comments }`, reads at most 50,000 rows
+  for all posts of the request (`maxRelationRows`). More rows give an
+  error. Change it in `GraphQLConfig`.
+
+### Auth middleware
+
+- If you use a subclass of `AuthMiddleware` in `middleware`, override
+  `asOptional()` to give your subclass. The `asOptional()` of dox_auth
+  gives a plain `AuthMiddleware`, so your changes do not run.
+- The login runs lazily, when a field needs the user. The other
+  middleware in `middleware` runs before it, with no user.
 
 Read the full docs: https://dartondox.dev/latest/packages/graphql/

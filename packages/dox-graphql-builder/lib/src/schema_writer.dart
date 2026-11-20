@@ -13,19 +13,88 @@ class SchemaWriter {
   static const String _context = 'DoxGraphQLContext';
   static const String _info = 'ResolveInfo<$_context> info';
 
-  /// The policy check of the update and delete mutations.
+  /// The policy checks of the models with `policy:`.
   static const String _allow =
       '''
-/// Asks the policy of [model] (registered with `Gate.policy`) if the user
-/// may do [ability]. Throws "Forbidden" when not.
+/// Asks the policy (registered with `Gate.policy`) if the user may do
+/// [ability] on [subject]: a row, or the model type. Throws when not:
+/// "Unauthenticated" for a guest, else "Forbidden".
 Future<void> _allow(
   ResolveInfo<$_context> info,
   String ability,
-  Object model,
+  Object subject,
 ) async {
   Object? user = await info.context.user<Object>();
-  if (!await Gate.allows(user, ability, model)) throw GraphQLAuth.forbidden();
+  if (!await Gate.allows(user, ability, subject)) throw _denied(user);
 }
+
+/// [_allow] for an id with no row: [blank] is a new, empty row. A user
+/// the policy denies gets the same error as for a row that exists, so the
+/// answer does not show which ids exist. A policy that fails to read the
+/// empty row (a null check, a missing value) denies. Other errors, like a
+/// database error, are thrown.
+Future<void> _allowMissing(
+  ResolveInfo<$_context> info,
+  String ability,
+  Object blank,
+) async {
+  Object? user = await info.context.user<Object>();
+  bool allowed;
+  try {
+    allowed = await Gate.allows(user, ability, blank);
+  } on TypeError {
+    allowed = false;
+  } on StateError {
+    allowed = false;
+  } on NoSuchMethodError {
+    allowed = false;
+  }
+  if (!allowed) throw _denied(user);
+}
+
+/// [_allow] on the model type [T], when the policy of [T] lists
+/// [ability] (`viewAny`, `create`). Else nothing is checked.
+Future<void> _allowIf<T>(ResolveInfo<$_context> info, String ability) async {
+  if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);
+}
+
+/// The rows of [rows] that the `view` ability of the policy allows, when
+/// the policy of [T] lists `view`. The others are left out, with no error.
+Future<List<T>?> _viewList<T extends Object>(
+  ResolveInfo<$_context> info,
+  Future<List<T>?> rows,
+) async {
+  List<T>? list = await rows;
+  if (list == null || list.isEmpty || !Gate.hasAbility<T>('view')) {
+    return list;
+  }
+  Object? user = await info.context.user<Object>();
+  return <T>[
+    for (T row in list)
+      if (await Gate.allows(user, 'view', row)) row,
+  ];
+}
+
+/// [row] when the `view` ability of the policy allows it (or the policy
+/// of [T] does not list `view`), else null.
+Future<T?> _viewOne<T extends Object>(
+  ResolveInfo<$_context> info,
+  Future<T?> row,
+) async {
+  T? value = await row;
+  if (value == null || !Gate.hasAbility<T>('view')) return value;
+  Object? user = await info.context.user<Object>();
+  return await Gate.allows(user, 'view', value) ? value : null;
+}
+
+/// "Unauthenticated" before the row lookup, when the policy denies every
+/// guest.
+Future<void> _login(ResolveInfo<$_context> info) async {
+  if (await info.context.auth() == null) throw GraphQLAuth.unauthenticatedError();
+}
+
+GraphQLError _denied(Object? user) =>
+    user == null ? GraphQLAuth.unauthenticatedError() : GraphQLAuth.forbidden();
 ''';
 
   String write() {

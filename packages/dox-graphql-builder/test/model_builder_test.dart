@@ -47,6 +47,14 @@ class CreatePostDto {
 }
 ''';
 
+const String _titleDto = '''
+@Dto()
+class CreatePostDto {
+  CreatePostDto({required this.title});
+  final String title;
+}
+''';
+
 void main() {
   group('models |', () {
     test('the key, columns and relations', () async {
@@ -333,12 +341,14 @@ class Post extends Model<Post> {
         out,
         contains(flat("import 'package:dox_auth/dox_auth.dart' show Gate;")),
       );
+      // a guest can never pass a Policy<User, ...>: stopped before the
+      // lookup. A missing id is checked as a blank row.
       expect(
         out,
         contains(
           flat(
-            'if (model == null) return null; '
-            "await _allow(info, 'update', model);",
+            'ResolveInfo<DoxGraphQLContext> info) async { await _login(info); '
+            'i1.Post? model',
           ),
         ),
       );
@@ -346,8 +356,8 @@ class Post extends Model<Post> {
         out,
         contains(
           flat(
-            'if (model == null) return false; '
-            "await _allow(info, 'delete', model); await model.delete();",
+            "if (model == null) { await _allowMissing(info, 'update', "
+            "i1.Post()); return null; } await _allow(info, 'update', model);",
           ),
         ),
       );
@@ -355,8 +365,125 @@ class Post extends Model<Post> {
         out,
         contains(
           flat(
-            'if (!await Gate.allows(user, ability, model)) '
-            'throw GraphQLAuth.forbidden();',
+            "if (model == null) { await _allowMissing(info, 'delete', "
+            "i1.Post()); return false; } await _allow(info, 'delete', model); "
+            'await model.delete();',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'if (!await Gate.allows(user, ability, subject)) '
+            'throw _denied(user);',
+          ),
+        ),
+      );
+      // a database error on the blank row is not turned into FORBIDDEN
+      expect(out, contains(flat('} on TypeError { allowed = false; }')));
+      expect(out, isNot(contains('catch (_)')));
+      // the read and create checks are decided at run time by the
+      // abilities of the registered policy, not by method names
+      expect(
+        out,
+        contains(
+          flat(
+            'if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(flat("bool view = Gate.hasAbility<i1.Post>('view');")),
+      );
+      // a guest can never pass a Policy<User, ...>
+      expect(out, contains(flat('if (view) await _login(info);')));
+    });
+
+    test('policy: the reads, create and relations ask Gate', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, policy: PostPolicy)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+
+@DoxModel(table: 'blogs')
+@GraphQLType()
+class Blog extends Model<Blog> {
+  @HasMany(Post)
+  List<Post> posts = <Post>[];
+  @HasOne(Post)
+  Post? top;
+}
+''', dto: _titleDto),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
+            '_viewList<i1.Post>(info, GraphQLOrm.list<i1.Post>(i1.Post(), '
+            'info)))',
+          ),
+        ),
+      );
+      // a nullable user type lets a guest reach the policy: no _login
+      expect(
+        out,
+        contains(
+          flat(
+            'Future<i1.Post?> _findPost(ResolveInfo<DoxGraphQLContext> info) '
+            "async { bool view = Gate.hasAbility<i1.Post>('view'); "
+            'i1.Post? model',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "if (view) { await (model == null ? _allowMissing(info, 'view', "
+            "i1.Post()) : _allow(info, 'view', model)); }",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'ResolveInfo<DoxGraphQLContext> info) async { '
+            "await _allowIf<i1.Post>(info, 'create');",
+          ),
+        ),
+      );
+      // relations to Post ask viewAny; a list relation has the row cap
+      expect(
+        out,
+        contains(
+          flat(
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
+            '_viewList<i1.Post>(info, GraphQLOrm.many<i1.Blog, i1.Post>(s, '
+            "'posts', info.context, (i1.Blog p) => p.posts)))",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
+            '_viewOne<i1.Post>(info, GraphQLOrm.relation<i1.Blog, i1.Post?>('
+            "s, 'top', info.context, (i1.Blog p) => p.top)))",
           ),
         ),
       );

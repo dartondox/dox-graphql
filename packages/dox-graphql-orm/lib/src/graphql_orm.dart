@@ -55,6 +55,71 @@ class GraphQLOrm {
     return read(parent);
   }
 
+  /// The list relation [name] of [parent] (`HasMany`, `ManyToMany`,
+  /// `HasManyThrough`, `MorphMany`), read with [read] when preloaded.
+  ///
+  /// Like [relation], it loads every parent of the request in one batch.
+  /// The batch query has `LIMIT maxRelationRows + 1`, with
+  /// `GraphQLConfig.maxRelationRows`: more rows is an error. [pivot] is
+  /// true for `ManyToMany`.
+  static Future<List<R>?> many<P extends Model<P>, R>(
+    P parent,
+    String name,
+    DoxGraphQLContext context,
+    List<R>? Function(P parent) read, {
+    bool pivot = false,
+  }) async {
+    if (parent.getPreload().contains(name)) return read(parent);
+    DataLoader<P, List<R>> loader = context.loader<P, List<R>>(
+      'dox_graphql_orm:many:$P.$name',
+      () => DataLoader<P, List<R>>(
+        (List<P> parents) =>
+            _loadMany<P, R>(parents, name, pivot, context.maxRelationRows),
+      ),
+    );
+    return (await loader.load(parent)) ?? <R>[];
+  }
+
+  static Future<List<List<R>>> _loadMany<P extends Model<P>, R>(
+    List<P> parents,
+    String name,
+    bool pivot,
+    int maxRows,
+  ) async {
+    Function? query = parents.first.relationsQueryMatcher[name];
+    if (query == null) {
+      throw StateError('"$name" is not a relation of $P.');
+    }
+    // the generated query builders take a List<Model<P>>
+    Object? q = Function.apply(query, <Object?>[
+      <Model<P>>[...parents],
+    ]);
+    if (q is! QueryBuilder<Object?>) {
+      throw StateError(
+        'The query of relation $P.$name is not a QueryBuilder but '
+        '${q.runtimeType}. Run the dox_orm model builder again.',
+      );
+    }
+    q.limit(maxRows + 1);
+    Map<String, List<R>> rows = pivot
+        ? await getManyToMany<P, R>(q, parents)
+        : await getHasMany<P, R>(q, parents);
+    int count = 0;
+    for (List<R> list in rows.values) {
+      count += list.length;
+    }
+    if (count > maxRows) {
+      throw GraphQLError(
+        'The relation $P.$name has more than $maxRows rows for this '
+        'request (GraphQLConfig.maxRelationRows). Ask for fewer parents, '
+        'or page it in a resolver.',
+      );
+    }
+    return <List<R>>[
+      for (P p in parents) rows[p.tempIdValue.toString()] ?? <R>[],
+    ];
+  }
+
   /// Loads relation [name] into its field on each of [parents], with the
   /// loader the model generator made for it.
   static Future<List<bool?>> _load<P extends Model<P>>(

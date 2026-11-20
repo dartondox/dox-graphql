@@ -58,6 +58,11 @@ final class GraphQLExecutor<C> {
   /// with one error. This catches long lists that the field count cannot
   /// see.
   ///
+  /// [maxRootFields] limits the top-level fields of the operation, with
+  /// fragments expanded and each alias counted. Root fields of a query
+  /// all start at once, so many aliases of one costly field would run
+  /// side by side.
+  ///
   /// By default, an error that a resolver throws and that is not a
   /// [GraphQLError] is sent as "Internal server error", so no internal
   /// text leaks. [showInternalErrors] sends the real message (for
@@ -74,6 +79,7 @@ final class GraphQLExecutor<C> {
     this.maxQueryLength = defaultMaxQueryLength,
     this.maxFields = defaultMaxFields,
     this.maxNodes = defaultMaxNodes,
+    this.maxRootFields = defaultMaxRootFields,
     this.maxErrors = defaultMaxErrors,
     this.showInternalErrors = false,
     this.guard,
@@ -94,6 +100,9 @@ final class GraphQLExecutor<C> {
   /// The default of [maxNodes]: 100,000.
   static const int defaultMaxNodes = 100000;
 
+  /// The default of [maxRootFields]: 50.
+  static const int defaultMaxRootFields = 50;
+
   /// The default of [maxErrors]: 100.
   static const int defaultMaxErrors = 100;
 
@@ -104,6 +113,7 @@ final class GraphQLExecutor<C> {
   final int maxQueryLength;
   final int maxFields;
   final int maxNodes;
+  final int maxRootFields;
 
   /// The most errors kept. Validation stops at the first error after
   /// it. A request keeps running, but fields that start after it give
@@ -214,6 +224,7 @@ final class GraphQLExecutor<C> {
       context,
       showInternalErrors,
       maxNodes,
+      maxRootFields,
       maxErrors,
       guard,
     ).run();
@@ -304,6 +315,7 @@ final class _Execution {
     this.context,
     this.showInternalErrors,
     this.maxNodes,
+    this.maxRootFields,
     this.maxErrors,
     this.guard,
   ) : variableValues = InputValues(variables);
@@ -316,6 +328,7 @@ final class _Execution {
   final Object? context;
   final bool showInternalErrors;
   final int maxNodes;
+  final int maxRootFields;
   final int maxErrors;
   final FieldGuard? guard;
   int _nodes = 0;
@@ -347,6 +360,14 @@ final class _Execution {
       } on GraphQLError catch (e) {
         // A bad @skip or @include argument, like an explicit null variable.
         return GraphQLResponse.failed(<GraphQLError>[e]);
+      }
+      if (fields.length > maxRootFields) {
+        return GraphQLResponse.failed(<GraphQLError>[
+          GraphQLError(
+            'The operation has too many top-level fields: the limit is '
+            '$maxRootFields.',
+          ),
+        ]);
       }
       data = operation.type == OperationType.mutation
           ? await _serialFields(root, fields)

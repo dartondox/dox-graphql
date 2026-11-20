@@ -65,7 +65,10 @@ void main() {
       read('lib/config/graphql.dart'),
       allOf(
         contains("import 'package:my_app/generated/schema.g.dart';"),
-        contains('GraphQLConfig(schema: graphqlSchema)'),
+        contains('schema: graphqlSchema,'),
+        // the API is public until the app turns the login on
+        contains('every field of the API is public'),
+        contains('// middleware: <Object>[AuthMiddleware()],'),
       ),
     );
     expect(

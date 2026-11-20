@@ -54,6 +54,20 @@ class GraphQLType {
   /// they write. A denied write fails with "Forbidden" (code
   /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
   /// usual. Without it, the model gets only the create mutation.
+  ///
+  /// When the registered policy lists the ability `viewAny`, `view` or
+  /// `create` in `abilities` (checked at run time with
+  /// `Gate.hasAbility`), the list query asks `viewAny`, the find query asks `view`,
+  /// a relation to the model asks `viewAny`, and the create mutation asks
+  /// `create`. The list query and the relations drop the rows that `view`
+  /// denies, so a list can have fewer rows than `limit`. A
+  /// denied guest gets "Unauthenticated", a denied user "Forbidden". A
+  /// missing id is checked as a blank row, so a denied user gets the same
+  /// error for an id that exists and one that does not.
+  ///
+  /// Only the generated fields and relations run these checks. A
+  /// hand-written `@GraphQLQuery`, `@ResolveField` or plain-class getter
+  /// that gives a model must call `Gate` itself.
   final Type? policy;
 
   /// Models only: the column of the owner, like `'userId'`. The create
