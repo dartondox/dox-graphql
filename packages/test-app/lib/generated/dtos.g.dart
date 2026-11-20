@@ -7,6 +7,7 @@ import 'package:dox_graphql_test_app/app/dtos/article_dto.dart';
 import 'package:dox_graphql_test_app/app/dtos/create_book.dart';
 import 'package:dox_graphql_test_app/app/dtos/create_post.dart';
 import 'package:dox_graphql_test_app/app/dtos/member_dto.dart';
+import 'package:dox_graphql_test_app/app/dtos/note_dto.dart';
 
 /// Every DTO of the app. Use it in `AppConfig(dtos: dtos)`.
 const List<DtoSchema<Object>> dtos = <DtoSchema<Object>>[
@@ -14,4 +15,5 @@ const List<DtoSchema<Object>> dtos = <DtoSchema<Object>>[
   $CreateBookDto,
   $CreatePostDtoDto,
   $MemberDtoDto,
+  $NoteDtoDto,
 ];

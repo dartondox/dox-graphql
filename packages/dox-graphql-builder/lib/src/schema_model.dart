@@ -90,6 +90,13 @@ class ObjectSpec {
   /// Models: true with a `policy:`, for the update and delete mutations.
   bool policy = false;
 
+  /// Models: the column of `owner:`, like `userId`. The create mutation
+  /// sets it to the id of the logged-in user.
+  String? owner;
+
+  /// Models: the Dart type of the [owner] column, `int` or `String`.
+  String ownerType = 'int';
+
   /// Models: the primary key column, like `id`.
   String primaryKey = 'id';
 

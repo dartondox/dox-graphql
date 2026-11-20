@@ -86,7 +86,28 @@ class GraphQLAuth implements FieldGuard {
     throw StateError(
       'The GraphQL $what has auth: true, but GraphQLConfig.middleware has '
       'no auth middleware, so no user is ever logged in. Add the auth '
-      'middleware, like `middleware: <Object>[AuthMiddleware()]`.',
+      'middleware, like `middleware: <Object>[AuthMiddleware()]`. (The '
+      'create mutation of a model with `owner:` has auth: true too.)',
+    );
+  }
+
+  /// The id of the logged-in user, for the `owner:` column [where] (like
+  /// `Post.userId`) of a create mutation. The code that
+  /// `dox_graphql_builder` writes calls it.
+  ///
+  /// A guest gets "Unauthenticated". A user with no id, or an id that is
+  /// not a [T], gets an error too: a row is never saved with a null or
+  /// wrong owner.
+  static Future<T> ownerId<T extends Object>(
+    DoxGraphQLContext context,
+    String where,
+  ) async {
+    IAuth? auth = await context.auth();
+    if (auth == null) throw _error();
+    Object? id = auth.id();
+    if (id is T) return id;
+    throw GraphQLError(
+      'The logged-in user has no $T id to set as the owner $where.',
     );
   }
 

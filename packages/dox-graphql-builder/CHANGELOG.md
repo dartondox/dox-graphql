@@ -1,5 +1,9 @@
 ## Unreleased
 
+- `@GraphQLType(owner: 'userId')`: `createPost` sets the owner column to
+  the id of the logged-in user, and needs a login. The build fails when
+  the owner is not an int or String column of the model, is a field of
+  the DTO, or has no `dto:`.
 - An app with no GraphQL class yet still gets `lib/generated/schema.g.dart`.
   The schema has one placeholder query, so the app starts. It goes away
   with the first real query.

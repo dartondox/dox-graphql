@@ -1,6 +1,7 @@
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_test_app/generated/schema.g.dart';
+import 'package:dox_orm/dox_orm.dart';
 import 'package:test/test.dart';
 
 import 'db.dart';
@@ -168,6 +169,21 @@ void main() {
       expect(res['data'], <String, Object?>{
         'post': <String, Object?>{'title': 'Second'},
       });
+    });
+
+    test('owner: a user with no id saves no row', () async {
+      // FakeAuth has no id()
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { createNote(input: {title: "x"}) { id } }',
+      );
+      expect(res['data'], isNull);
+      expect(
+        ((res['errors'] as List<Object?>).single
+            as Map<String, Object?>)['message'],
+        'The logged-in user has no int id to set as the owner Note.userId.',
+      );
+      expect(await QueryBuilder.table('notes').count(), 0);
     });
   });
 }

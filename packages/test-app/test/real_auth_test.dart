@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:dox_auth/dox_auth.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
+import 'package:dox_orm/dox_orm.dart';
+import 'package:dox_graphql_test_app/app/models/note/note.model.dart';
 import 'package:dox_graphql_test_app/app/models/user/user.model.dart';
 import 'package:dox_graphql_test_app/generated/schema.g.dart';
 import 'package:test/test.dart';
@@ -107,5 +109,89 @@ void main() {
     queries.clear();
     await send(query, bearer: token);
     expect(queries.where((String sql) => sql.contains('users')), isNotEmpty);
+  });
+
+  // Note has `auth: false` and `owner: 'userId'`
+  group('owner: |', () {
+    Object? code(Map<String, Object?> res) {
+      List<Object?> errors = res['errors'] as List<Object?>;
+      return ((errors.single as Map<String, Object?>)['extensions']
+          as Map<String, Object?>?)?['code'];
+    }
+
+    Future<int> count() => QueryBuilder.table('notes').count();
+
+    test('create sets the owner to the logged-in user', () async {
+      Map<String, Object?> res = await send(
+        'mutation { createNote(input: {title: "Mine"}) { id title userId } }',
+        bearer: token,
+      );
+      expect(res['errors'], isNull);
+      Map<String, Object?> note =
+          (res['data'] as Map<String, Object?>)['createNote']
+              as Map<String, Object?>;
+      expect(note['title'], 'Mine');
+      expect(note['userId'], 1);
+      Note saved = (await Note().find(int.parse(note['id'] as String)))!;
+      expect(saved.userId, 1);
+    });
+
+    test('a client can not send the owner', () async {
+      int before = await count();
+      Map<String, Object?> res = await send(
+        'mutation { createNote(input: {title: "x", userId: 2}) { id } }',
+        bearer: token,
+      );
+      expect(res['data'], isNull);
+      expect(
+        (res['errors'] as List<Object?>).toString(),
+        contains('Field "userId" is not defined by type "CreateNoteInput".'),
+      );
+      expect(await count(), before);
+    });
+
+    test('a guest gets UNAUTHENTICATED, even with auth: false', () async {
+      int before = await count();
+      Map<String, Object?> res = await send(
+        'mutation { createNote(input: {title: "Guest"}) { id } }',
+      );
+      expect(res['data'], isNull);
+      expect(code(res), 'UNAUTHENTICATED');
+      expect(await count(), before);
+      // reading stays public
+      Map<String, Object?> list = await send('{ notes { id } }');
+      expect(list['errors'], isNull);
+    });
+
+    test('update does not change the owner', () async {
+      Map<String, Object?> made = await send(
+        'mutation { createNote(input: {title: "Old"}) { id } }',
+        bearer: token,
+      );
+      String id =
+          ((made['data'] as Map<String, Object?>)['createNote']
+                  as Map<String, Object?>)['id']
+              as String;
+      Map<String, Object?> res = await send(
+        'mutation { updateNote(id: "$id", input: {title: "New"}) '
+        '{ title userId } }',
+        bearer: token,
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'updateNote': <String, Object?>{'title': 'New', 'userId': 1},
+        },
+      });
+      Map<String, Object?> bad = await send(
+        'mutation { updateNote(id: "$id", input: {userId: 2}) { id } }',
+        bearer: token,
+      );
+      expect(bad['data'], isNull);
+      expect(
+        (bad['errors'] as List<Object?>).toString(),
+        contains('Field "userId" is not defined by type "UpdateNoteInput".'),
+      );
+      expect((await Note().find(int.parse(id)))!.userId, 1);
+    });
   });
 }

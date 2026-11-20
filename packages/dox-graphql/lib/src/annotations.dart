@@ -21,6 +21,7 @@ class GraphQLType {
     this.dto,
     this.auth,
     this.policy,
+    this.owner,
   });
 
   /// The type name. Default: the class name.
@@ -54,6 +55,18 @@ class GraphQLType {
   /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
   /// usual. Without it, the model gets only the create mutation.
   final Type? policy;
+
+  /// Models only: the column of the owner, like `'userId'`. The create
+  /// mutation sets it to the id of the logged-in user, so a client can
+  /// not send or change it. It is not in the input, and the update
+  /// mutation never changes it. Create then always needs a login, even
+  /// with `auth: false`. It needs [dto], and the column must not be a
+  /// field of the DTO.
+  ///
+  /// ```dart
+  /// @GraphQLType(dto: CreatePostDto, owner: 'userId')
+  /// ```
+  final String? owner;
 }
 
 /// Leaves a field out of the GraphQL type.

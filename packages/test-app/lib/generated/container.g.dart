@@ -13,11 +13,12 @@ import 'package:dox_graphql_test_app/app/models/comment/comment.model.dart'
     as i5;
 import 'package:dox_graphql_test_app/app/models/image/image.model.dart' as i6;
 import 'package:dox_graphql_test_app/app/models/member/member.model.dart' as i7;
-import 'package:dox_graphql_test_app/app/models/post/post.model.dart' as i8;
+import 'package:dox_graphql_test_app/app/models/note/note.model.dart' as i8;
+import 'package:dox_graphql_test_app/app/models/post/post.model.dart' as i9;
 import 'package:dox_graphql_test_app/app/models/profile/profile.model.dart'
-    as i9;
-import 'package:dox_graphql_test_app/app/models/tag/tag.model.dart' as i10;
-import 'package:dox_graphql_test_app/app/models/user/user.model.dart' as i11;
+    as i10;
+import 'package:dox_graphql_test_app/app/models/tag/tag.model.dart' as i11;
+import 'package:dox_graphql_test_app/app/models/user/user.model.dart' as i12;
 
 /// Puts every class of the app into the container: the
 /// `@Inject()` classes, routers, providers and model binders.
@@ -51,24 +52,29 @@ void registerContainer(IocContainer c) {
     if (key == null) return null;
     return i7.Member().find(key);
   });
-  c.bindModel<i8.Post>((String id) {
+  c.bindModel<i8.Note>((String id) {
     int? key = int.tryParse(id);
     if (key == null) return null;
-    return i8.Post().find(key);
+    return i8.Note().find(key);
   });
-  c.bindModel<i9.Profile>((String id) {
+  c.bindModel<i9.Post>((String id) {
     int? key = int.tryParse(id);
     if (key == null) return null;
-    return i9.Profile().find(key);
+    return i9.Post().find(key);
   });
-  c.bindModel<i10.Tag>((String id) {
+  c.bindModel<i10.Profile>((String id) {
     int? key = int.tryParse(id);
     if (key == null) return null;
-    return i10.Tag().find(key);
+    return i10.Profile().find(key);
   });
-  c.bindModel<i11.User>((String id) {
+  c.bindModel<i11.Tag>((String id) {
     int? key = int.tryParse(id);
     if (key == null) return null;
-    return i11.User().find(key);
+    return i11.Tag().find(key);
+  });
+  c.bindModel<i12.User>((String id) {
+    int? key = int.tryParse(id);
+    if (key == null) return null;
+    return i12.User().find(key);
   });
 }
