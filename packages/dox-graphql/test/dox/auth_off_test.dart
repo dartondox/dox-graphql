@@ -36,7 +36,7 @@ void main() {
         isA<StateError>().having(
           (StateError e) => e.message,
           'message',
-          contains('Query.secret has auth: true'),
+          contains('field Query.secret has auth: true'),
         ),
       ),
     );

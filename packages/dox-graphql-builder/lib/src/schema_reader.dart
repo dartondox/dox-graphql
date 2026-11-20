@@ -68,6 +68,10 @@ class SchemaReader {
   /// True when a model is in the schema: the code imports
   /// dox_graphql_orm.
   bool get hasModels => objects.values.any((ObjectSpec o) => o.orm);
+
+  /// True when a model has `policy:`: the code then uses `Gate` of
+  /// dox_auth.
+  bool hasPolicies = false;
   final List<FieldSpec> query = <FieldSpec>[];
   final List<FieldSpec> mutation = <FieldSpec>[];
 
@@ -145,13 +149,11 @@ class SchemaReader {
       package: 'dox_annotation',
     );
     DartType? dto = type.getField('dto')?.toTypeValue();
-    bool? auth = type.getField('auth')?.toBoolValue();
-    if (model == null && auth != null) {
+    DartType? policy = type.getField('policy')?.toTypeValue();
+    if (model == null && policy != null) {
       _fail(
         where,
-        '`auth:` on @GraphQLType works only on a model of dox_orm: it sets '
-        'the login rule of the model queries and writes. Put `auth:` on '
-        'the @GraphQLQuery or @GraphQLMutation that gives this type.',
+        '`policy:` works only on a model of dox_orm with `dto:`.',
         element,
       );
     }
@@ -170,10 +172,10 @@ class SchemaReader {
       element.library.uri.toString(),
       description: _string(type, 'description') ?? docOf(element),
     );
+    spec.auth = type.getField('auth')?.toBoolValue();
     if (model == null) return;
     spec.orm = true;
     spec.queries = type.getField('queries')?.toBoolValue() ?? true;
-    spec.auth = auth;
     if (dto != null) {
       Element? dtoElement = dto is InterfaceType ? dto.element : null;
       if (dtoElement is! ClassElement || !_dtos.isDto(dtoElement)) {
@@ -185,6 +187,28 @@ class SchemaReader {
         );
       }
       spec.dto = dtoElement;
+    }
+    if (policy != null) {
+      if (dto == null) {
+        _fail(
+          where,
+          '`policy:` needs `dto:`: the policy guards the update and delete '
+          'mutations, and they come from the DTO.',
+          element,
+        );
+      }
+      if (!_isPolicyOf(policy, element)) {
+        _fail(
+          where,
+          '`policy:` must be a Policy of dox_auth for ${element.displayName}, '
+          'like `class ${element.displayName}Policy extends '
+          'Policy<User, ${element.displayName}>`, not '
+          '${policy.getDisplayString()}.',
+          element,
+        );
+      }
+      spec.policy = true;
+      hasPolicies = true;
     }
     spec.primaryKey = model.getField('primaryKey')?.toStringValue() ?? 'id';
     DartType? key = model.getField('primaryKeyType')?.toTypeValue();
@@ -368,7 +392,9 @@ class SchemaReader {
     if (dtoElement == null) return;
     InputSpec create = inputOf(dtoElement, name: 'Create${name}Input')
       ..validated = true;
-    InputSpec update = inputOf(dtoElement, name: 'Update${name}Input');
+    InputSpec? update = spec.policy
+        ? inputOf(dtoElement, name: 'Update${name}Input')
+        : null;
     String dtoPrefix = imports.prefix(dtoElement.library);
     String dto = '$dtoPrefix.${dtoElement.displayName}';
     String schema = '$dtoPrefix.\$${dtoElement.displayName}Dto';
@@ -448,35 +474,11 @@ class SchemaReader {
       }
     }
     String key = camelCase(spec.primaryKey);
-    functions
-      ..add('''
+    functions.add('''
 /// Makes a $name from the input of `create$name`.
 Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
   $dto dto = await ${create.validate}(info.args.input('input')!, info.context);
   $model model = $model()${sets.join()};
-  await model.save();
-  return model;
-}
-''')
-      ..add('''
-/// Sets the fields the client sent on a $name. Null when there is no
-/// $name with that id.
-Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
-  $model? model = await GraphQLOrm.find<$model>($model(), $id);
-  if (model == null) return null;
-  InputValues input = info.args.input('input')!;
-  Map<String, Object?> given = ${update.toMap}(input);
-  // the other fields keep their stored values, and are not checked
-  $dto dto = await GraphQLDto.validateSent<$dto>(
-    $schema,
-    <String, Object?>{${current.join()} ...given},
-    info.context,
-    sent: given.keys.toSet(),
-    placeholders: const <String, Object?>{${placeholders.join()}},
-    names: const <String, String>{${names.join()}},
-    params: <String, String>{'id': '\${model.$key}'},
-  );
-  ${updates.join('\n  ')}
   await model.save();
   return model;
 }
@@ -496,6 +498,44 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       'Mutation',
       element,
     );
+    // ponytail: no policy, no update or delete: a write to a row needs a
+    // rule about who owns it.
+    if (update == null) return;
+    functions
+      ..add('''
+/// Sets the fields the client sent on a $name. Null when there is no
+/// $name with that id.
+Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await GraphQLOrm.find<$model>($model(), $id);
+  if (model == null) return null;
+  await _allow(info, 'update', model);
+  InputValues input = info.args.input('input')!;
+  Map<String, Object?> given = ${update.toMap}(input);
+  // the other fields keep their stored values, and are not checked
+  $dto dto = await GraphQLDto.validateSent<$dto>(
+    $schema,
+    <String, Object?>{${current.join()} ...given},
+    info.context,
+    sent: given.keys.toSet(),
+    placeholders: const <String, Object?>{${placeholders.join()}},
+    names: const <String, String>{${names.join()}},
+    params: <String, String>{'id': '\${model.$key}'},
+  );
+  ${updates.join('\n  ')}
+  await model.save();
+  return model;
+}
+''')
+      ..add('''
+/// Deletes a $name. False when there is no $name with that id.
+Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await GraphQLOrm.find<$model>($model(), $id);
+  if (model == null) return false;
+  await _allow(info, 'delete', model);
+  await model.delete();
+  return true;
+}
+''');
     _addField(
       mutation,
       FieldSpec(
@@ -516,7 +556,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         name: 'delete$name',
         type: 'graphqlBoolean.nonNull',
         args: <ArgSpec>[idArg],
-        resolve: 'GraphQLOrm.delete<$model>($model(), $id)',
+        resolve: '_delete$name(info)',
         where: hint,
         auto: true,
         auth: spec.auth,
@@ -524,6 +564,22 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       'Mutation',
       element,
     );
+  }
+
+  /// True when [policy] is a `Policy<U, M>` of dox_auth with [model] as
+  /// `M`.
+  static bool _isPolicyOf(DartType policy, ClassElement model) {
+    if (policy is! InterfaceType) return false;
+    for (InterfaceType t in policy.allSupertypes) {
+      if (t.element.name != 'Policy' ||
+          !t.element.library.uri.toString().startsWith('package:dox_auth/') ||
+          t.typeArguments.length != 2) {
+        continue;
+      }
+      DartType m = t.typeArguments[1];
+      return m is InterfaceType && m.element == model;
+    }
+    return false;
   }
 
   static EnumElement _enumOf(DtoType type) {

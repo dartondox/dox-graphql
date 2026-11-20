@@ -1,5 +1,5 @@
 name: dox_graphql_orm
-description: 'The dox_orm part of dox_graphql: list and find queries, relations loaded in batches, and create, update and delete for @GraphQLType models.'
+description: 'The dox_orm part of dox_graphql: list and find queries, relations loaded in batches, and writes for @GraphQLType models.'
 version: 0.0.1
 homepage: https://dartondox.dev
 repository: https://github.com/dartondox/dox-graphql

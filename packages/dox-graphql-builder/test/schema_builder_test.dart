@@ -734,7 +734,7 @@ class R {
     test('auth: on queries, mutations and @ResolveField', () async {
       String out = flat(
         await _build('''
-@GraphQLType()
+@GraphQLType(auth: true)
 class Book {
   final int id = 1;
 }

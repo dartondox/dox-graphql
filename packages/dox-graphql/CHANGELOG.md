@@ -4,13 +4,20 @@
   `lib/config/graphql.dart`, the provider and build_runner. `--no-orm`
   leaves out dox_graphql_orm. It never overwrites a file.
 - Login per field: `auth:` on `@GraphQLType`, `@GraphQLQuery`,
-  `@GraphQLMutation`, `@GraphQLField` and `@ResolveField`, and on `Field`.
-  With the auth middleware in `GraphQLConfig.middleware`, query and
-  mutation fields need a login by default; without it, they are public.
-  The auth middleware no longer stops the request: a field that needs a
-  login fails with `UNAUTHENTICATED`, and its resolver does not run.
-  `GraphQLExecutor(guard:)` takes a `FieldGuard` that checks each field
+  `@GraphQLMutation`, `@GraphQLField`, `@ResolveField`, `Field` and
+  `ObjectType`. With the auth middleware in `GraphQLConfig.middleware`,
+  fields need a login by default; without it, they are public. A type
+  with `auth: true` is protected on every field that gives it. A field
+  that needs a login fails with `UNAUTHENTICATED`, and its resolver does
+  not run.
+- The auth middleware runs only when a field needs the user, once per
+  request. `DoxGraphQLContext.user<T>()` and `auth()` are now async.
+- `@GraphQLType(policy:)`: a dox_auth policy that guards the update and
+  delete mutations of a model. A denied write fails with `FORBIDDEN`.
+- `GraphQLExecutor(guard:)` takes a `FieldGuard` that checks each field
   before its resolver.
+- In development, the app prints how many fields are public and how many
+  need a login.
 - First version: the GraphQL engine, in pure Dart.
   - Type system: the built-in scalars, custom scalars, objects,
     interfaces, unions, enums, input objects, lists, non-null, arguments

@@ -4,6 +4,7 @@
 
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_orm/dox_graphql_orm.dart';
+import 'package:dox_auth/dox_auth.dart' show Gate;
 import 'package:dox_graphql_test_app/app/graphql/types.dart' as i1;
 import 'package:dox_graphql_test_app/app/models/account/account.model.dart'
     as i2;
@@ -103,6 +104,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'posts',
         _tPost.nonNull.list.nonNull,
+        auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
           Argument('offset', graphqlInt, defaultValue: '0'),
@@ -113,6 +115,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'post',
         _tPost,
+        auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             GraphQLOrm.find<i7.Post>(
@@ -123,6 +126,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'users',
         _tUser.nonNull.list.nonNull,
+        auth: true,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
           Argument('offset', graphqlInt, defaultValue: '0'),
@@ -133,6 +137,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'user',
         _tUser,
+        auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             GraphQLOrm.find<i10.User>(
@@ -242,10 +247,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.delete<i3.Article>(
-              i3.Article(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _deleteArticle(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createMember',
@@ -272,14 +274,12 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.delete<i6.Member>(
-              i6.Member(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _deleteMember(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createPost',
         _tPost.nonNull,
+        auth: false,
         args: <Argument>[Argument('input', _iCreatePostInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             _createPost(info),
@@ -287,6 +287,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'updatePost',
         _tPost,
+        auth: false,
         args: <Argument>[
           Argument('id', graphqlId.nonNull),
           Argument('input', _iUpdatePostInput.nonNull),
@@ -297,12 +298,10 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'deletePost',
         graphqlBoolean.nonNull,
+        auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.delete<i7.Post>(
-              i7.Post(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _deletePost(info),
       ),
       Field<Object?, DoxGraphQLContext>(
         'createBook',
@@ -445,6 +444,7 @@ final ObjectType<i2.Account, DoxGraphQLContext> _tAccount =
 final ObjectType<i3.Article, DoxGraphQLContext> _tArticle =
     ObjectType<i3.Article, DoxGraphQLContext>(
       'Article',
+      auth: false,
       fields: () {
         i3.Article model = i3.Article();
         List<String> hidden = model.hidden;
@@ -572,6 +572,7 @@ final ObjectType<i6.Member, DoxGraphQLContext> _tMember =
     ObjectType<i6.Member, DoxGraphQLContext>(
       'Member',
       description: '`hidden` leaves out a column and a relation.',
+      auth: true,
       fields: () {
         i6.Member model = i6.Member();
         List<String> hidden = model.hidden;
@@ -627,6 +628,7 @@ final ObjectType<i6.Member, DoxGraphQLContext> _tMember =
 final ObjectType<i7.Post, DoxGraphQLContext> _tPost =
     ObjectType<i7.Post, DoxGraphQLContext>(
       'Post',
+      auth: false,
       fields: () {
         i7.Post model = i7.Post();
         List<String> hidden = model.hidden;
@@ -799,77 +801,76 @@ final ObjectType<i9.Tag, DoxGraphQLContext> _tTag =
       },
     );
 
-final ObjectType<i10.User, DoxGraphQLContext> _tUser =
-    ObjectType<i10.User, DoxGraphQLContext>(
-      'User',
-      fields: () {
-        i10.User model = i10.User();
-        List<String> hidden = model.hidden;
-        List<String> visible = model.visibleFields;
-        bool show(String name) =>
-            !hidden.contains(name) &&
-            (visible.isEmpty || visible.contains(name));
-        return <Field<i10.User, DoxGraphQLContext>>[
-          if (show('id'))
-            Field<i10.User, DoxGraphQLContext>(
-              'id',
-              graphqlId.nonNull,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.id,
-            ),
-          if (show('name'))
-            Field<i10.User, DoxGraphQLContext>(
-              'name',
-              graphqlString,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.name,
-            ),
-          if (show('password'))
-            Field<i10.User, DoxGraphQLContext>(
-              'password',
-              graphqlString,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  s.password,
-            ),
-          if (show('posts'))
-            Field<i10.User, DoxGraphQLContext>(
-              'posts',
-              _tPost.nonNull.list.nonNull,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  GraphQLOrm.relation<i10.User, List<i7.Post>>(
-                    s,
-                    'posts',
-                    info.context,
-                    (i10.User p) => p.posts,
-                  ),
-            ),
-          if (show('profile'))
-            Field<i10.User, DoxGraphQLContext>(
-              'profile',
-              _tProfile,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  GraphQLOrm.relation<i10.User, i8.Profile?>(
-                    s,
-                    'profile',
-                    info.context,
-                    (i10.User p) => p.profile,
-                  ),
-            ),
-          if (show('articles'))
-            Field<i10.User, DoxGraphQLContext>(
-              'articles',
-              _tArticle.nonNull.list.nonNull,
-              resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
-                  GraphQLOrm.relation<i10.User, List<i3.Article>>(
-                    s,
-                    'articles',
-                    info.context,
-                    (i10.User p) => p.articles,
-                  ),
-            ),
-        ];
-      },
-    );
+final ObjectType<i10.User, DoxGraphQLContext>
+_tUser = ObjectType<i10.User, DoxGraphQLContext>(
+  'User',
+  description: 'Every field that gives a User needs a login, also `post.user`.',
+  auth: true,
+  fields: () {
+    i10.User model = i10.User();
+    List<String> hidden = model.hidden;
+    List<String> visible = model.visibleFields;
+    bool show(String name) =>
+        !hidden.contains(name) && (visible.isEmpty || visible.contains(name));
+    return <Field<i10.User, DoxGraphQLContext>>[
+      if (show('id'))
+        Field<i10.User, DoxGraphQLContext>(
+          'id',
+          graphqlId.nonNull,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) => s.id,
+        ),
+      if (show('name'))
+        Field<i10.User, DoxGraphQLContext>(
+          'name',
+          graphqlString,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) => s.name,
+        ),
+      if (show('password'))
+        Field<i10.User, DoxGraphQLContext>(
+          'password',
+          graphqlString,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
+              s.password,
+        ),
+      if (show('posts'))
+        Field<i10.User, DoxGraphQLContext>(
+          'posts',
+          _tPost.nonNull.list.nonNull,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
+              GraphQLOrm.relation<i10.User, List<i7.Post>>(
+                s,
+                'posts',
+                info.context,
+                (i10.User p) => p.posts,
+              ),
+        ),
+      if (show('profile'))
+        Field<i10.User, DoxGraphQLContext>(
+          'profile',
+          _tProfile,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
+              GraphQLOrm.relation<i10.User, i8.Profile?>(
+                s,
+                'profile',
+                info.context,
+                (i10.User p) => p.profile,
+              ),
+        ),
+      if (show('articles'))
+        Field<i10.User, DoxGraphQLContext>(
+          'articles',
+          _tArticle.nonNull.list.nonNull,
+          resolve: (i10.User s, ResolveInfo<DoxGraphQLContext> info) =>
+              GraphQLOrm.relation<i10.User, List<i3.Article>>(
+                s,
+                'articles',
+                info.context,
+                (i10.User p) => p.articles,
+              ),
+        ),
+    ];
+  },
+);
 
 final EnumType<i1.Genre> _eGenre = EnumType<i1.Genre>(
   'Genre',
@@ -1073,6 +1074,7 @@ Future<i3.Article?> _updateArticle(ResolveInfo<DoxGraphQLContext> info) async {
     int.tryParse(info.args.get<String>('id')!),
   );
   if (model == null) return null;
+  await _allow(info, 'update', model);
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = _mUpdateArticleInput(input);
   // the other fields keep their stored values, and are not checked
@@ -1088,6 +1090,18 @@ Future<i3.Article?> _updateArticle(ResolveInfo<DoxGraphQLContext> info) async {
   if (input.has('title')) model.title = dto.title;
   await model.save();
   return model;
+}
+
+/// Deletes a Article. False when there is no Article with that id.
+Future<bool> _deleteArticle(ResolveInfo<DoxGraphQLContext> info) async {
+  i3.Article? model = await GraphQLOrm.find<i3.Article>(
+    i3.Article(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (model == null) return false;
+  await _allow(info, 'delete', model);
+  await model.delete();
+  return true;
 }
 
 /// Makes a Member from the input of `createMember`.
@@ -1111,6 +1125,7 @@ Future<i6.Member?> _updateMember(ResolveInfo<DoxGraphQLContext> info) async {
     int.tryParse(info.args.get<String>('id')!),
   );
   if (model == null) return null;
+  await _allow(info, 'update', model);
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = _mUpdateMemberInput(input);
   // the other fields keep their stored values, and are not checked
@@ -1127,6 +1142,18 @@ Future<i6.Member?> _updateMember(ResolveInfo<DoxGraphQLContext> info) async {
   if (input.has('email')) model.email = dto.email;
   await model.save();
   return model;
+}
+
+/// Deletes a Member. False when there is no Member with that id.
+Future<bool> _deleteMember(ResolveInfo<DoxGraphQLContext> info) async {
+  i6.Member? model = await GraphQLOrm.find<i6.Member>(
+    i6.Member(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (model == null) return false;
+  await _allow(info, 'delete', model);
+  await model.delete();
+  return true;
 }
 
 /// Makes a Post from the input of `createPost`.
@@ -1151,6 +1178,7 @@ Future<i7.Post?> _updatePost(ResolveInfo<DoxGraphQLContext> info) async {
     int.tryParse(info.args.get<String>('id')!),
   );
   if (model == null) return null;
+  await _allow(info, 'update', model);
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = _mUpdatePostInput(input);
   // the other fields keep their stored values, and are not checked
@@ -1177,4 +1205,27 @@ Future<i7.Post?> _updatePost(ResolveInfo<DoxGraphQLContext> info) async {
   if (input.has('status')) model.status = dto.status;
   await model.save();
   return model;
+}
+
+/// Deletes a Post. False when there is no Post with that id.
+Future<bool> _deletePost(ResolveInfo<DoxGraphQLContext> info) async {
+  i7.Post? model = await GraphQLOrm.find<i7.Post>(
+    i7.Post(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (model == null) return false;
+  await _allow(info, 'delete', model);
+  await model.delete();
+  return true;
+}
+
+/// Asks the policy of [model] (registered with `Gate.policy`) if the user
+/// may do [ability]. Throws "Forbidden" when not.
+Future<void> _allow(
+  ResolveInfo<DoxGraphQLContext> info,
+  String ability,
+  Object model,
+) async {
+  Object? user = await info.context.user<Object>();
+  if (!await Gate.allows(user, ability, model)) throw GraphQLAuth.forbidden();
 }

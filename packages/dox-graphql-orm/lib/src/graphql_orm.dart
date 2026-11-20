@@ -34,14 +34,6 @@ class GraphQLOrm {
     return query.find(id);
   }
 
-  /// Deletes the row with key [id]. False when there is no such row.
-  static Future<bool> delete<M extends Model<M>>(M query, Object? id) async {
-    M? model = await find<M>(query, id);
-    if (model == null) return false;
-    await model.delete();
-    return true;
-  }
-
   /// The relation [name] of [parent], read with [read].
   ///
   /// A relation that is already loaded (preloaded, or `eager: true`) runs

@@ -416,9 +416,15 @@ class ObjectType<S, C> extends NamedType {
     required this._fields,
     this.interfaces = const <InterfaceType>[],
     this._isTypeOf,
+    this.auth,
   });
 
   final List<Field<S, C>> Function() _fields;
+
+  /// True: every field that gives this type needs a logged-in user. False:
+  /// those fields are public. Null: the default of the server. The engine
+  /// only keeps this value; a [FieldGuard] given to the executor checks it.
+  final bool? auth;
   final bool Function(Object value)? _isTypeOf;
   final List<InterfaceType> interfaces;
 

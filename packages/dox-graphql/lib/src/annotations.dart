@@ -20,6 +20,7 @@ class GraphQLType {
     this.queries = true,
     this.dto,
     this.auth,
+    this.policy,
   });
 
   /// The type name. Default: the class name.
@@ -34,16 +35,25 @@ class GraphQLType {
   /// relations and custom resolvers.
   final bool queries;
 
-  /// Models only: a `@Dto` class. With it, the model gets the create,
-  /// update and delete mutations, and a client can set only the fields
-  /// of the DTO.
+  /// Models only: a `@Dto` class. With it, the model gets the create
+  /// mutation (and with [policy] the update and delete mutations), and a
+  /// client can set only the fields of the DTO.
   final Type? dto;
 
-  /// Models only: the login rule of the list, find, create, update and
-  /// delete fields. True: they need a logged-in user. False: they are
-  /// public. Null (default): they need a login only when
-  /// `GraphQLConfig.middleware` has the auth middleware.
+  /// True: every field that gives this type needs a logged-in user:
+  /// the model queries, relations and custom resolvers too. False: those
+  /// fields are public. Null (default): they need a login only when
+  /// `GraphQLConfig.middleware` has the auth middleware. On a model, it
+  /// also sets the login rule of the delete mutation.
   final bool? auth;
+
+  /// Models only: a `Policy` of dox_auth for the model, like `PostPolicy`.
+  /// With it and [dto], the model gets the update and delete mutations.
+  /// They load the row and ask the policy (`update`, `delete`) before
+  /// they write. A denied write fails with "Forbidden" (code
+  /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
+  /// usual. Without it, the model gets only the create mutation.
+  final Type? policy;
 }
 
 /// Leaves a field out of the GraphQL type.

@@ -7,6 +7,7 @@ environment:
 resolution: workspace
 
 dependencies:
+  dox_auth: ^3.2.1
   dox_core: ^3.2.3
   dox_graphql: ^0.0.1
   dox_graphql_orm: ^0.0.1

@@ -116,4 +116,49 @@ void main() {
       'data': <String, Object?>{'__typename': 'Query'},
     });
   });
+
+  test('a public request runs no login', () async {
+    FakeLoginMiddleware.runs = 0;
+    TestResponse res = await send('{ open note { title } }', good);
+    expect(res.json['errors'], isNull);
+    expect(FakeLoginMiddleware.runs, 0);
+  });
+
+  test('the login runs once per request', () async {
+    FakeLoginMiddleware.runs = 0;
+    TestResponse res = await send('{ me count a: me b: me }', good);
+    expect(res.json['data'], <String, Object?>{
+      'me': 'ann',
+      'count': 1,
+      'a': 'ann',
+      'b': 'ann',
+    });
+    expect(FakeLoginMiddleware.runs, 1);
+  });
+
+  test('a type with auth: true needs a login everywhere', () async {
+    TestResponse res = await send('{ shop { name owner { email } } }');
+    expect(res.json['data'], <String, Object?>{
+      'shop': <String, Object?>{'name': 'S', 'owner': null},
+    });
+    expect(res.json['errors'][0]['path'], <Object?>['shop', 'owner']);
+    expect(res.json['errors'][0]['extensions'], <String, Object?>{
+      'code': 'UNAUTHENTICATED',
+    });
+    res = await send('{ account { email } }');
+    expect(res.json['errors'][0]['message'], 'Unauthenticated');
+    res = await send('{ shop { owner { email } } }', good);
+    expect(res.json['data'], <String, Object?>{
+      'shop': <String, Object?>{
+        'owner': <String, Object?>{'email': 'o@x'},
+      },
+    });
+  });
+
+  test('count gives the public and login fields', () {
+    GraphQLAuth auth = GraphQLAuth(authSchema, loginByDefault: true);
+    // public: open, autoOpen, note, shop. login: me, count, account,
+    // write, Shop.owner.
+    expect(auth.count(), (4, 5));
+  });
 }

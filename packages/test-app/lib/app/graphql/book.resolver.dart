@@ -22,7 +22,7 @@ class BookResolver {
   }
 
   @GraphQLQuery()
-  String? me(DoxGraphQLContext context) => context.user<String>();
+  Future<String?> me(DoxGraphQLContext context) => context.user<String>();
 
   @GraphQLMutation()
   Future<BookItem> createBook(CreateBook input) async => repo.add(input);

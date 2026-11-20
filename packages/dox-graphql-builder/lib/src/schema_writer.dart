@@ -13,6 +13,21 @@ class SchemaWriter {
   static const String _context = 'DoxGraphQLContext';
   static const String _info = 'ResolveInfo<$_context> info';
 
+  /// The policy check of the update and delete mutations.
+  static const String _allow =
+      '''
+/// Asks the policy of [model] (registered with `Gate.policy`) if the user
+/// may do [ability]. Throws "Forbidden" when not.
+Future<void> _allow(
+  ResolveInfo<$_context> info,
+  String ability,
+  Object model,
+) async {
+  Object? user = await info.context.user<Object>();
+  if (!await Gate.allows(user, ability, model)) throw GraphQLAuth.forbidden();
+}
+''';
+
   String write() {
     StringBuffer out = StringBuffer()
       ..writeln('// GENERATED CODE - DO NOT MODIFY BY HAND')
@@ -24,6 +39,9 @@ class SchemaWriter {
       ..writeln("import 'package:dox_graphql/dox_graphql.dart';");
     if (reader.hasModels) {
       out.writeln("import 'package:dox_graphql_orm/dox_graphql_orm.dart';");
+    }
+    if (reader.hasPolicies) {
+      out.writeln("import 'package:dox_auth/dox_auth.dart' show Gate;");
     }
     StringBuffer body = StringBuffer();
     _writeSchema(body);
@@ -39,6 +57,7 @@ class SchemaWriter {
     for (String function in reader.functions) {
       body.writeln(function);
     }
+    if (reader.hasPolicies) body.writeln(_allow);
     // the imports last: writing the code finds the prefixes
     for (MapEntry<String, String> import in reader.imports.prefixes.entries) {
       out.writeln("import '${import.key}' as ${import.value};");
@@ -96,6 +115,7 @@ class SchemaWriter {
     if (object.description != null) {
       out.writeln('description: ${_string(object.description!)},');
     }
+    if (object.auth != null) out.writeln('auth: ${object.auth},');
     if (object.orm) {
       // a column or relation in `hidden` of the model is left out, so it
       // never leaks. With `visibleFields`, only those are shown.

@@ -12,7 +12,11 @@ void main() {
   setUpAll(() async {
     await setUpDatabase();
     client = await startApp(
-      GraphQLConfig(schema: graphqlSchema, autoResolvers: false),
+      GraphQLConfig(
+        schema: graphqlSchema,
+        autoResolvers: false,
+        middleware: <Object>[const FakeAuthMiddleware()],
+      ),
     );
   });
 
@@ -41,12 +45,5 @@ void main() {
       'mutation { createBook(input: {title: "Long", authorId: 1}) { id } }',
     );
     expect(res['errors'], isNull);
-  });
-
-  test('with no auth middleware, fields are public by default', () async {
-    Map<String, Object?> res = await run(client, '{ me path }', user: null);
-    expect(res, <String, Object?>{
-      'data': <String, Object?>{'me': null, 'path': '/graphql'},
-    });
   });
 }

@@ -24,8 +24,12 @@ class FakeLoginMiddleware implements IAuthMiddleware {
   @override
   IAuthMiddleware asOptional() => const FakeLoginMiddleware(optional: true);
 
+  /// How many times a login ran.
+  static int runs = 0;
+
   @override
   IDoxRequest handle(IDoxRequest req) {
+    runs++;
     String token = req.header('authorization') ?? '';
     if (token.startsWith('Bearer good-')) {
       req.auth = FakeAuth(token.substring('Bearer good-'.length));
@@ -48,6 +52,34 @@ final ObjectType<Map<String, Object?>, DoxGraphQLContext> _note =
           'secretBody',
           graphqlString,
           auth: true,
+        ),
+      ],
+    );
+
+/// A type that always needs a login.
+final ObjectType<Map<String, Object?>, DoxGraphQLContext> _account =
+    ObjectType<Map<String, Object?>, DoxGraphQLContext>(
+      'Account',
+      auth: true,
+      fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
+        Field<Map<String, Object?>, DoxGraphQLContext>('email', graphqlString),
+      ],
+    );
+
+/// A public type, with a relation to a protected one.
+final ObjectType<Map<String, Object?>, DoxGraphQLContext> _shop =
+    ObjectType<Map<String, Object?>, DoxGraphQLContext>(
+      'Shop',
+      auth: false,
+      fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
+        Field<Map<String, Object?>, DoxGraphQLContext>('name', graphqlString),
+        Field<Map<String, Object?>, DoxGraphQLContext>(
+          'owner',
+          _account,
+          resolve: (
+            Map<String, Object?> s,
+            ResolveInfo<DoxGraphQLContext> info,
+          ) => <String, Object?>{'email': 'o@x'},
         ),
       ],
     );
@@ -79,6 +111,19 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
             graphqlString,
             auth: false,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => 'a',
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'shop',
+            _shop,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                <String, Object?>{'name': 'S'},
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'account',
+            _account,
+            auth: false,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                <String, Object?>{'email': 'a@x'},
           ),
           Field<Object?, DoxGraphQLContext>(
             'note',

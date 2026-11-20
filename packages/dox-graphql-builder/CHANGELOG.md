@@ -3,10 +3,12 @@
 - An app with no GraphQL class yet still gets `lib/generated/schema.g.dart`.
   The schema has one placeholder query, so the app starts. It goes away
   with the first real query.
-- Writes the `auth:` of `@GraphQLType` (on the model queries and writes),
-  `@GraphQLQuery`, `@GraphQLMutation`, `@GraphQLField` and `@ResolveField`
-  into the generated fields. `auth:` on a `@GraphQLType` that is not a
-  model stops the build.
+- Writes the `auth:` of `@GraphQLType`, `@GraphQLQuery`,
+  `@GraphQLMutation`, `@GraphQLField` and `@ResolveField` into the
+  generated types and fields.
+- `updatePost` and `deletePost` are made only with
+  `@GraphQLType(policy: PostPolicy)`. They ask the policy (through `Gate`
+  of dox_auth) before they write.
 - First version: builds `lib/generated/schema.g.dart` with
   `graphqlSchema` from `@GraphQLType`, `@GraphQLField`, `@GraphQLIgnore`,
   `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.
@@ -24,6 +26,6 @@
   fields are in the type. Relations load in batches with dox_graphql_orm.
   - A list and a find query (`posts(limit:, offset:)`, `post(id:)`).
     `@GraphQLType(queries: false)` turns them off.
-  - `@GraphQLType(dto: CreatePostDto)` adds `createPost`, `updatePost`
-    and `deletePost`. Only the DTO fields can be set, and the DTO rules
+  - `@GraphQLType(dto: CreatePostDto)` adds `createPost`; with
+    `policy:` also `updatePost` and `deletePost`. Only the DTO fields can be set, and the DTO rules
     run first. Update checks and sets only the fields the client sent.

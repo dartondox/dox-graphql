@@ -1,3 +1,4 @@
+import 'package:dox_auth/dox_auth.dart' show Gate;
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
@@ -6,6 +7,10 @@ import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql/src/dox/graphql_auth.dart' show IAuthMiddleware;
 import 'package:dox_graphql_test_app/generated/container.g.dart';
 import 'package:dox_graphql_test_app/generated/dtos.g.dart';
+import 'package:dox_graphql_test_app/app/models/article/article.model.dart';
+import 'package:dox_graphql_test_app/app/models/member/member.model.dart';
+import 'package:dox_graphql_test_app/app/models/post/post.model.dart';
+import 'package:dox_graphql_test_app/app/policies/policies.dart';
 
 /// A fake login: the user is the name in the `x-user` header.
 class FakeAuth implements IAuth {
@@ -46,8 +51,12 @@ class FakeAuthMiddleware implements IAuthMiddleware {
   @override
   IAuthMiddleware asOptional() => const FakeAuthMiddleware(optional: true);
 
+  /// How many times a login ran.
+  static int runs = 0;
+
   @override
   IDoxRequest handle(IDoxRequest req) {
+    runs++;
     String? name = req.header('x-user');
     if (name != null && name != 'bad') {
       req.auth = FakeAuth(name);
@@ -61,6 +70,9 @@ class FakeAuthMiddleware implements IAuthMiddleware {
 /// Starts the app with the generated schema.
 Future<DoxTestClient> startApp(GraphQLConfig config) {
   Env().env = <String, String>{};
+  Gate.policy<Post>(PostPolicy());
+  Gate.policy<Member>(MemberPolicy());
+  Gate.policy<Article>(ArticlePolicy());
   return DoxTestClient.start(
     AppConfig(
       appKey: 'graphql-test-key-0123456789abcd!',

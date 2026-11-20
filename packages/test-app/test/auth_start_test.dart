@@ -12,7 +12,7 @@ void main() {
         isA<StateError>().having(
           (StateError e) => e.message,
           'message',
-          contains('Query.members has auth: true'),
+          contains('has auth: true, but GraphQLConfig.middleware has no auth'),
         ),
       ),
     );

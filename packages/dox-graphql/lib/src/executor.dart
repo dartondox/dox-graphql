@@ -17,8 +17,9 @@ import 'values.dart';
 /// Checks a field before its resolver runs, like a login check.
 abstract interface class FieldGuard {
   /// The error that fails [field] of [parent], or null to run the
-  /// resolver. [context] is the context of the request.
-  GraphQLError? check(
+  /// resolver. [context] is the context of the request. Give a plain
+  /// value when no wait is needed: a Future costs a little on each field.
+  FutureOr<GraphQLError?> check(
     ObjectType<Object?, Object?> parent,
     Field<Object?, Object?> field,
     Object? context,
@@ -518,7 +519,10 @@ final class _Execution {
       return null;
     }
     try {
-      GraphQLError? denied = guard?.check(type, def, context);
+      FutureOr<GraphQLError?> check = guard?.check(type, def, context);
+      GraphQLError? denied = check is Future<GraphQLError?>
+          ? await check
+          : check;
       if (denied != null) throw denied;
       InputValues args = Values.argumentValues(
         def.args,

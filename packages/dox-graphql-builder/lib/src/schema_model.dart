@@ -84,8 +84,11 @@ class ObjectSpec {
   /// delete mutations.
   ClassElement? dto;
 
-  /// Models: the `auth:` of the model queries and writes.
+  /// The `auth:` of the type.
   bool? auth;
+
+  /// Models: true with a `policy:`, for the update and delete mutations.
+  bool policy = false;
 
   /// Models: the primary key column, like `id`.
   String primaryKey = 'id';

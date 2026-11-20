@@ -108,5 +108,66 @@ void main() {
         },
       });
     });
+
+    test('a protected type is protected in a relation too', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ post(id: "1") { title user { name } } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{
+        'post': <String, Object?>{'title': 'Hello GraphQL', 'user': null},
+      });
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+      res = await run(client, '{ post(id: "1") { user { name } } }');
+      expect(res['data'], <String, Object?>{
+        'post': <String, Object?>{
+          'user': <String, Object?>{'name': 'Ada'},
+        },
+      });
+    });
+
+    test('a request that does not need the user runs no login', () async {
+      FakeAuthMiddleware.runs = 0;
+      await run(client, '{ path article(id: "1") { title } }');
+      expect(FakeAuthMiddleware.runs, 0);
+      Map<String, Object?> res = await run(client, '{ me a: me b: me }');
+      expect(res['data'], <String, Object?>{
+        'me': 'tester',
+        'a': 'tester',
+        'b': 'tester',
+      });
+      expect(FakeAuthMiddleware.runs, 1);
+    });
+
+    test('the policy guards update and delete', () async {
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { updatePost(id: "2", input: {title: "Hacked"}) { id } }',
+        user: 'intruder',
+      );
+      expect(res['data'], <String, Object?>{'updatePost': null});
+      expect(res['errors'], <Object?>[
+        <String, Object?>{
+          'message': 'Forbidden',
+          'locations': <Object?>[
+            <String, Object?>{'line': 1, 'column': 12},
+          ],
+          'path': <Object?>['updatePost'],
+          'extensions': <String, Object?>{'code': 'FORBIDDEN'},
+        },
+      ]);
+      res = await run(
+        client,
+        'mutation { deletePost(id: "2") }',
+        user: 'intruder',
+      );
+      expect(res['data'], isNull);
+      expect(_codes(res), <Object?>['FORBIDDEN']);
+      res = await run(client, '{ post(id: "2") { title } }', user: null);
+      expect(res['data'], <String, Object?>{
+        'post': <String, Object?>{'title': 'Second'},
+      });
+    });
   });
 }
