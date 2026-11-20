@@ -831,6 +831,9 @@ final class _OverlapChecker {
   /// field it must match: the first one with a non-object parent, else the
   /// first one with the same parent. The first fields of each parent are
   /// compared with the first field of the group, for the response shape.
+  ///
+  /// Then the sub fields of the whole group are merged and checked the
+  /// same way, so a conflict between any two fields deep inside is found.
   void _group(List<_FieldEntry> group, bool parentsExclusive) {
     if (group.length < 2) return;
     _FieldEntry first = group.first;
@@ -841,21 +844,64 @@ final class _OverlapChecker {
         break;
       }
     }
-    Map<NamedType?, _FieldEntry> firstOfParent =
-        Map<NamedType?, _FieldEntry>.identity();
+    Map<NamedType?, List<_FieldEntry>> byParent =
+        Map<NamedType?, List<_FieldEntry>>.identity();
+    bool conflict = false;
     for (_FieldEntry e in group) {
+      List<_FieldEntry> same = byParent[e.parent] ??= <_FieldEntry>[];
+      same.add(e);
       _FieldEntry reference;
       if (parentsExclusive) {
         reference = first;
       } else if (nonObject != null) {
         reference = nonObject;
       } else {
-        reference = firstOfParent.putIfAbsent(e.parent, () => e);
+        reference = same.first;
         if (identical(reference, e)) reference = first;
       }
-      if (!identical(reference.node, e.node)) {
-        _pair(reference, e, parentsExclusive);
+      if (!identical(reference.node, e.node) &&
+          _pair(reference, e, parentsExclusive)) {
+        conflict = true;
       }
+    }
+    // Like the spec, stop at the first conflict of a group.
+    if (conflict) return;
+    if (parentsExclusive || nonObject != null) {
+      // All pairs are exclusive, or none is.
+      _subFields(group, parentsExclusive);
+      return;
+    }
+    // Fields with one parent must merge. Fields with different object
+    // parents must only have the same shape.
+    for (List<_FieldEntry> same in byParent.values) {
+      _subFields(same, false);
+    }
+    if (byParent.length > 1) _subFields(group, true);
+  }
+
+  /// Merges the sub fields of [group] and checks them.
+  void _subFields(List<_FieldEntry> group, bool exclusive) {
+    Map<String, List<_FieldEntry>> merged = <String, List<_FieldEntry>>{};
+    Set<FieldNode> seen = Set<FieldNode>.identity();
+    int sets = 0;
+    for (_FieldEntry e in group) {
+      SelectionSetNode? set = e.node.selectionSet;
+      if (set == null) continue;
+      sets++;
+      for (MapEntry<String, List<_FieldEntry>> sub in _collect(
+        set,
+        _subType(e.def),
+      ).entries) {
+        _spend(sub.value.length);
+        List<_FieldEntry> list = merged[sub.key] ??= <_FieldEntry>[];
+        for (_FieldEntry x in sub.value) {
+          if (seen.add(x.node)) list.add(x);
+        }
+      }
+    }
+    if (sets < 2) return;
+    for (List<_FieldEntry> list in merged.values) {
+      _group(list, exclusive);
     }
   }
 
@@ -867,14 +913,16 @@ final class _OverlapChecker {
     return true;
   }
 
-  void _pair(_FieldEntry a, _FieldEntry b, bool parentsExclusive) {
+  /// Compares two fields: names, arguments and types. True on a conflict.
+  /// Their sub fields are checked by [_group].
+  bool _pair(_FieldEntry a, _FieldEntry b, bool parentsExclusive) {
     _spend(1);
     bool exclusive =
         parentsExclusive ||
         (!identical(a.parent, b.parent) &&
             a.parent is ObjectType<Object?, Object?> &&
             b.parent is ObjectType<Object?, Object?>);
-    if (!_markDone(a.node, b.node, exclusive)) return;
+    if (!_markDone(a.node, b.node, exclusive)) return false;
     String key = (a.node.alias ?? a.node.name).value;
     String? reason;
     if (!exclusive) {
@@ -895,27 +943,15 @@ final class _OverlapChecker {
       reason =
           'they return conflicting types "${defA.type}" and "${defB.type}"';
     }
-    if (reason != null) {
-      errors.add(
-        GraphQLError.at(
-          'Fields "$key" conflict because $reason. Use different aliases on '
-          'the fields to fetch both if this was intentional.',
-          <Node>[a.node, b.node],
-        ),
-      );
-      return;
-    }
-    SelectionSetNode? setA = a.node.selectionSet;
-    SelectionSetNode? setB = b.node.selectionSet;
-    if (setA == null || setB == null) return;
-    Map<String, List<_FieldEntry>> subA = _collect(setA, _subType(defA));
-    Map<String, List<_FieldEntry>> subB = _collect(setB, _subType(defB));
-    for (MapEntry<String, List<_FieldEntry>> e in subA.entries) {
-      List<_FieldEntry>? other = subB[e.key];
-      if (other == null) continue;
-      _spend(e.value.length + other.length);
-      _group(<_FieldEntry>[...e.value, ...other], exclusive);
-    }
+    if (reason == null) return false;
+    errors.add(
+      GraphQLError.at(
+        'Fields "$key" conflict because $reason. Use different aliases on '
+        'the fields to fetch both if this was intentional.',
+        <Node>[a.node, b.node],
+      ),
+    );
+    return true;
   }
 
   bool _sameArguments(List<ArgumentNode> a, List<ArgumentNode> b) {

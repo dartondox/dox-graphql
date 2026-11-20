@@ -16,9 +16,11 @@
   - A typed context object for every resolver.
   - `DataLoader` to batch and cache loads. With
     `DataLoader.withResults`, one key can fail on its own (`LoadResult`).
-  - Safety limits: `maxDepth` (64) and `maxQueryLength` (1,000,000
-    characters), a work budget for the overlapping fields check, and
-    `execute` never throws.
+  - Safety limits: `maxDepth` (64), `maxQueryLength` (1,000,000
+    characters), `maxFields` (20,000 selected fields, with fragments
+    expanded, checked before running), `maxNodes` (100,000 resolved fields
+    and list items, checked while running), a work budget for the
+    overlapping fields check, and `execute` never throws.
   - Errors from resolvers that are not a `GraphQLError` are sent as
     "Internal server error". `showInternalErrors: true` shows the real
     message.

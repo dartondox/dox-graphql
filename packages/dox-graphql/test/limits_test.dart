@@ -15,6 +15,11 @@ final ObjectType<int, Object?> nodeType = ObjectType<int, Object?>(
       graphqlInt,
       resolve: (int n, ResolveInfo<Object?> i) => n,
     ),
+    Field<int, Object?>(
+      'list',
+      nodeType.list,
+      resolve: (int n, ResolveInfo<Object?> i) => <int>[n + 1, n + 1],
+    ),
   ],
 );
 
@@ -175,6 +180,75 @@ void main() {
         expect(
           r.errors.single.message,
           'The query is too complex to validate.',
+        );
+      }, limit);
+    });
+  });
+
+  group('executed work', () {
+    Duration limit = const Duration(seconds: 2);
+
+    test('fragments that double each level are counted before running', () async {
+      await fast(() async {
+        StringBuffer q = StringBuffer('{ a { ...f0 } }\n');
+        for (int i = 0; i < 20; i++) {
+          q.writeln(
+            'fragment f$i on Node { x: a { ...f${i + 1} } y: a { ...f${i + 1} } }',
+          );
+        }
+        q.writeln('fragment f20 on Node { b }');
+        GraphQLResponse r = await run(q.toString());
+        expect(r.hasData, isFalse);
+        expect(
+          r.errors.single.message,
+          'The query selects too many fields: the limit is 20000.',
+        );
+      }, limit);
+    });
+
+    test('a list that doubles each level stops at maxNodes', () async {
+      await fast(() async {
+        GraphQLResponse r = await run(
+          '{ a { ${'list { ' * 22}b${' }' * 22} } }',
+        );
+        expect(r.data, isNull);
+        expect(
+          r.errors.single.message,
+          'The query returns too much data: the limit is 100000 fields and '
+          'list items.',
+        );
+        // Reaching 100000 nodes takes about 1 s; a slow CI runner gets room.
+      }, const Duration(seconds: 5));
+    });
+
+    test('maxNodes is configurable', () async {
+      GraphQLExecutor<Object?> small = GraphQLExecutor<Object?>(
+        schema,
+        maxNodes: 10,
+      );
+      expect((await run('{ a { list { b } } }', small)).errors, isEmpty);
+      expect(
+        (await run(
+          '{ a { list { list { list { b } } } } }',
+          small,
+        )).errors.single.message,
+        startsWith('The query returns too much data'),
+      );
+    });
+
+    test('many aliases of a big introspection selection', () async {
+      String one =
+          '__schema { types { name kind fields { name args { name type { name kind ofType { name kind } } } type { name kind ofType { name kind } } } } }';
+      StringBuffer q = StringBuffer('{');
+      for (int i = 0; i < 3000; i++) {
+        q.write(' s$i: $one');
+      }
+      q.write(' }');
+      await fast(() async {
+        GraphQLResponse r = await run(q.toString());
+        expect(
+          r.errors.single.message,
+          'The query selects too many fields: the limit is 20000.',
         );
       }, limit);
     });

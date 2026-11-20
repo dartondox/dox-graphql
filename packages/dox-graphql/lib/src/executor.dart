@@ -32,6 +32,12 @@ final class GraphQLExecutor<C> {
   /// can use up the stack, so keep it well below 300.
   /// [maxQueryLength] limits the query text, in characters.
   ///
+  /// [maxFields] limits the fields a query selects, with fragments
+  /// expanded, before it runs. [maxNodes] limits the work while it runs:
+  /// every resolved field and list item counts. Past it, the request stops
+  /// with one error. This catches long lists that the field count cannot
+  /// see.
+  ///
   /// By default, an error that a resolver throws and that is not a
   /// [GraphQLError] is sent as "Internal server error", so no internal
   /// text leaks. [showInternalErrors] sends the real message (for
@@ -43,6 +49,8 @@ final class GraphQLExecutor<C> {
     List<ValidationRule> rules = const <ValidationRule>[],
     this.maxDepth = 64,
     this.maxQueryLength = 1000000,
+    this.maxFields = 20000,
+    this.maxNodes = 100000,
     this.showInternalErrors = false,
   }) : rules = <ValidationRule>[
          if (!introspection) const NoIntrospectionRule(),
@@ -54,6 +62,8 @@ final class GraphQLExecutor<C> {
   final List<ValidationRule> rules;
   final int maxDepth;
   final int maxQueryLength;
+  final int maxFields;
+  final int maxNodes;
   final bool showInternalErrors;
 
   /// Runs one request. It never throws: errors are in the response.
@@ -89,6 +99,9 @@ final class GraphQLExecutor<C> {
       ]);
     } on StackOverflowError {
       return _tooDeep();
+    } catch (e, st) {
+      // A custom rule that throws, or a bug: never throw.
+      return _internalError(e, st);
     }
     if (errors.isNotEmpty) return GraphQLResponse.failed(errors);
 
@@ -98,14 +111,18 @@ final class GraphQLExecutor<C> {
       return _tooDeep();
     } catch (e, st) {
       // A bug in the engine, or a bad custom scalar: never throw.
-      return GraphQLResponse.failed(<GraphQLError>[
-        GraphQLError(
-          showInternalErrors ? e.toString() : 'Internal server error',
-          originalError: e,
-          stackTrace: st,
-        ),
-      ]);
+      return _internalError(e, st);
     }
+  }
+
+  GraphQLResponse _internalError(Object e, StackTrace st) {
+    return GraphQLResponse.failed(<GraphQLError>[
+      GraphQLError(
+        showInternalErrors ? e.toString() : 'Internal server error',
+        originalError: e,
+        stackTrace: st,
+      ),
+    ]);
   }
 
   GraphQLResponse _tooDeep() => GraphQLResponse.failed(<GraphQLError>[
@@ -141,6 +158,7 @@ final class GraphQLExecutor<C> {
       coerced.$1,
       context,
       showInternalErrors,
+      maxNodes,
     ).run();
   }
 
@@ -152,6 +170,13 @@ final class GraphQLExecutor<C> {
     if (errors.isNotEmpty) return errors;
     if (QueryLimits.selectionDepth(document) > maxDepth) {
       return _tooDeep().errors;
+    }
+    if (QueryLimits.fieldCount(document, maxFields) > maxFields) {
+      return <GraphQLError>[
+        GraphQLError(
+          'The query selects too many fields: the limit is $maxFields.',
+        ),
+      ];
     }
     if (rules.isEmpty) return errors;
     ValidationContext context = ValidationContext(schema, document);
@@ -188,6 +213,11 @@ final class _NullBubble {
   const _NullBubble();
 }
 
+/// Thrown when the execution passes `maxNodes`. It stops the request.
+final class _TooMuchWork {
+  const _TooMuchWork();
+}
+
 /// A field that is not in the schema: left out of the result.
 final class _Skip {
   const _Skip();
@@ -204,6 +234,7 @@ final class _Execution {
     this.variables,
     this.context,
     this.showInternalErrors,
+    this.maxNodes,
   ) : variableValues = InputValues(variables);
 
   final Schema<Object?> schema;
@@ -213,6 +244,8 @@ final class _Execution {
   final InputValues variableValues;
   final Object? context;
   final bool showInternalErrors;
+  final int maxNodes;
+  int _nodes = 0;
   final List<GraphQLError> errors = <GraphQLError>[];
 
   Future<GraphQLResponse> run() async {
@@ -236,8 +269,24 @@ final class _Execution {
           : await _fields(root, null, fields, null);
     } on _NullBubble {
       data = null;
+    } on _TooMuchWork {
+      return GraphQLResponse(
+        errors: <GraphQLError>[
+          GraphQLError(
+            'The query returns too much data: the limit is $maxNodes fields '
+            'and list items.',
+          ),
+        ],
+      );
     }
     return GraphQLResponse(data: data, errors: errors);
+  }
+
+  /// Counts resolved fields and list items. Past [maxNodes], it stops the
+  /// whole request.
+  void _spend(int nodes) {
+    _nodes += nodes;
+    if (_nodes > maxNodes) throw const _TooMuchWork();
   }
 
   /// Collects the fields of a selection set by response name, with
@@ -350,6 +399,7 @@ final class _Execution {
     String name = nodes.first.name.value;
     Field<Object?, Object?>? def = schema.field(type, name);
     if (def == null) return _skip;
+    _spend(1);
     try {
       InputValues args = Values.argumentValues(
         def.args,
@@ -371,6 +421,8 @@ final class _Execution {
       );
       Object? result = await def.resolveFor(source, info);
       return await _complete(def.type, type, nodes, path, result);
+    } on _TooMuchWork {
+      rethrow;
     } on _NullBubble {
       if (def.type is NonNullType) rethrow;
       return null;
@@ -431,6 +483,7 @@ final class _Execution {
           );
         }
         List<Object?> items = result.toList();
+        _spend(items.length);
         return Future.wait(<Future<Object?>>[
           for (int i = 0; i < items.length; i++)
             _item(type.ofType, parent, nodes, path.index(i), items[i]),
@@ -465,6 +518,8 @@ final class _Execution {
   ) async {
     try {
       return await _complete(type, parent, nodes, path, item);
+    } on _TooMuchWork {
+      rethrow;
     } on _NullBubble {
       if (type is NonNullType) rethrow;
       return null;

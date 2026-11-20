@@ -86,7 +86,10 @@ Future<void> main() async {
 - Resolvers read arguments with typed getters: `info.args.get<int>('id')`,
   `info.args.list<String>('tags')`, `info.args.input('filter')`.
 - `execute` never throws. A query deeper than `maxDepth` (64) or longer
-  than `maxQueryLength` is rejected before it is parsed.
+  than `maxQueryLength` is rejected before it is parsed. A query that
+  selects more than `maxFields` (20,000) fields, with fragments expanded,
+  is rejected before it runs. A request stops with one error when it
+  resolves more than `maxNodes` (100,000) fields and list items.
 - An error from a resolver that is not a `GraphQLError` is sent as
   "Internal server error". Turn on `showInternalErrors` in development
   to see the real message. Throw a `GraphQLError` to send your own.

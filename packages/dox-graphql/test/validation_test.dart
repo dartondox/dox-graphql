@@ -447,6 +447,42 @@ void main() {
     );
   });
 
+  test('overlapping fields: conflicts deep between non-first fields', () {
+    String conflict =
+        'Fields "b" conflict because "name" and "__typename" are different '
+        'fields. Use different aliases on the fields to fetch both if this '
+        'was intentional.';
+    invalid(
+      '{ dog { a: name } dog { owner { b: name } } dog { owner { b: __typename } } }',
+      <String>[conflict],
+    );
+    invalid(
+      '''
+      fragment F on Dog { owner { b: name } }
+      fragment G on Dog { owner { b: __typename } }
+      { dog { a: name } dog { ...F } dog { ...G } }
+    ''',
+      <String>[conflict],
+    );
+    valid(
+      '{ dog { a: name } dog { owner { b: name } } dog { owner { b: name } } }',
+    );
+  });
+
+  test('a rule that throws does not make execute throw', () async {
+    GraphQLExecutor<Object?> e = GraphQLExecutor<Object?>(
+      schema,
+      rules: <ValidationRule>[const _ThrowingRule()],
+    );
+    GraphQLResponse r = await e.execute(
+      const GraphQLRequest('{ dog { name } }'),
+      context: null,
+    );
+    expect(r.hasData, isFalse);
+    expect(r.errors.single.message, 'Internal server error');
+    expect(r.errors.single.originalError, isA<StateError>());
+  });
+
   test('extra rules run after the spec rules', () {
     GraphQLExecutor<Object?> e = GraphQLExecutor<Object?>(
       schema,
@@ -486,4 +522,12 @@ class _MaxTopFields implements ValidationRule {
       if (op.selectionSet.selections.length > max)
         GraphQLError.at('Too many fields.', <Node>[op]),
   ];
+}
+
+class _ThrowingRule implements ValidationRule {
+  const _ThrowingRule();
+
+  @override
+  List<GraphQLError> validate(ValidationContext context) =>
+      throw StateError('rule bug');
 }

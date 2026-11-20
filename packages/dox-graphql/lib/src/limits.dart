@@ -138,4 +138,73 @@ final class QueryLimits {
     memo[name] = 0; // a guard; cycles are rejected before
     return memo[name] = _depth(f.selectionSet, fragments, memo);
   }
+
+  /// The number of fields the largest operation selects, with fragments
+  /// expanded: a fragment spread twice counts twice. Each fragment is
+  /// counted once and reused, and counts stop growing at [cap], so this is
+  /// cheap even when the expanded query is huge. Fragment cycles must be
+  /// rejected before.
+  static int fieldCount(DocumentNode document, int cap) {
+    Map<String, FragmentDefinitionNode> fragments =
+        <String, FragmentDefinitionNode>{
+          for (DefinitionNode d in document.definitions)
+            if (d is FragmentDefinitionNode) d.name.value: d,
+        };
+    Map<String, int> memo = <String, int>{};
+    int max = 0;
+    for (DefinitionNode d in document.definitions) {
+      if (d is OperationDefinitionNode) {
+        int count = _count(d.selectionSet, fragments, memo, cap);
+        if (count > max) max = count;
+      }
+    }
+    return max;
+  }
+
+  static int _count(
+    SelectionSetNode set,
+    Map<String, FragmentDefinitionNode> fragments,
+    Map<String, int> memo,
+    int cap,
+  ) {
+    int total = 0;
+    for (SelectionNode s in set.selections) {
+      total += switch (s) {
+        FieldNode(:SelectionSetNode? selectionSet) =>
+          1 +
+              (selectionSet == null
+                  ? 0
+                  : _count(selectionSet, fragments, memo, cap)),
+        InlineFragmentNode(:SelectionSetNode selectionSet) => _count(
+          selectionSet,
+          fragments,
+          memo,
+          cap,
+        ),
+        FragmentSpreadNode(:NameNode name) => _fragmentCount(
+          name.value,
+          fragments,
+          memo,
+          cap,
+        ),
+        _ => 0,
+      };
+      if (total > cap) return cap + 1;
+    }
+    return total;
+  }
+
+  static int _fragmentCount(
+    String name,
+    Map<String, FragmentDefinitionNode> fragments,
+    Map<String, int> memo,
+    int cap,
+  ) {
+    int? known = memo[name];
+    if (known != null) return known;
+    FragmentDefinitionNode? f = fragments[name];
+    if (f == null) return 0;
+    memo[name] = 0; // a guard; cycles are rejected before
+    return memo[name] = _count(f.selectionSet, fragments, memo, cap);
+  }
 }
