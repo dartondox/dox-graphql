@@ -369,7 +369,7 @@ void main() {
       }, const Duration(seconds: 1));
     });
 
-    test('a request stops after maxErrors field errors', () async {
+    test('after maxErrors field errors, the data is kept', () async {
       StringBuffer q = StringBuffer('{ items { ');
       for (int i = 0; i < 95; i++) {
         q.write('a$i: boom ');
@@ -377,14 +377,38 @@ void main() {
       q.write('} }');
       await fast(() async {
         GraphQLResponse r = await run(q.toString());
-        expect(r.data, isNull);
+        List<Object?> items = r.data!['items']! as List<Object?>;
+        expect(items, hasLength(1000));
+        expect(items.first, containsPair('a0', null));
         expect(r.errors, hasLength(101));
         expect(
           r.errors.last.message,
-          'Too many errors: the limit is 100. The request was stopped.',
+          'Too many errors: the limit is 100. Fields after it were not run.',
         );
       }, const Duration(seconds: 1));
     });
+
+    test(
+      'exactly maxErrors errors keeps them all, with no extra error',
+      () async {
+        GraphQLResponse exact = await run(
+          '{ items { boom } }',
+          GraphQLExecutor<Object?>(schema, maxErrors: 1000),
+        );
+        expect(exact.data!['items'], hasLength(1000));
+        expect(exact.errors, hasLength(1000));
+        expect(exact.errors.last.message, 'boom');
+
+        GraphQLResponse over = await run(
+          '{ items { boom } }',
+          GraphQLExecutor<Object?>(schema, maxErrors: 999),
+        );
+        expect(over.data!['items'], hasLength(1000));
+        expect(over.errors, hasLength(1000));
+        expect(over.errors[998].message, 'boom');
+        expect(over.errors.last.message, startsWith('Too many errors'));
+      },
+    );
   });
 
   group('error messages', () {

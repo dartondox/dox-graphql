@@ -324,7 +324,7 @@ final class Values {
       if (identical(value, invalid)) {
         throw GraphQLError.at(
           'Argument "${def.name}" has invalid value ${printNode(valueNode)}.',
-          <Node>[valueNode],
+          <Node>[node ?? valueNode],
         );
       }
       out[def.name] = value;

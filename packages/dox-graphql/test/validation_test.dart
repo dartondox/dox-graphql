@@ -508,6 +508,65 @@ void main() {
     expect(errorsOf('{ dog { $fields} }', few), hasLength(4));
   });
 
+  test('each bad variable use is its own error, with its own location', () {
+    List<GraphQLError> errors(String q) => executor.validate(parseString(q));
+    List<GraphQLError> undefined = errors(
+      'query Q { human(id: \$b) { name } dog { name @skip(if: \$b) } }',
+    );
+    expect(
+      <String>[for (GraphQLError e in undefined) e.message],
+      <String>[
+        r'Variable "$b" is not defined by operation "Q".',
+        r'Variable "$b" is not defined by operation "Q".',
+      ],
+    );
+    expect(undefined[0].locations.first, const SourceLocation(1, 22));
+    expect(undefined[1].locations.first, const SourceLocation(1, 56));
+
+    List<GraphQLError> wrongType = errors('''
+query (\$a: String) {
+  complicatedArgs { intArgField(intArg: \$a) }
+  c2: complicatedArgs { intArgField(intArg: \$a) }
+}''');
+    expect(wrongType, hasLength(2));
+    expect(wrongType[0].locations.last, const SourceLocation(2, 42));
+    expect(wrongType[1].locations.last, const SourceLocation(3, 46));
+
+    // The same through two fragments.
+    List<GraphQLError> viaFragments = errors('''
+query (\$a: String) { complicatedArgs { ...F ...G } }
+fragment F on ComplicatedArgs { intArgField(intArg: \$a) }
+fragment G on ComplicatedArgs { i2: intArgField(intArg: \$a) }''');
+    expect(viaFragments, hasLength(2));
+    expect(viaFragments[0].locations.last.line, 2);
+    expect(viaFragments[1].locations.last.line, 3);
+  });
+
+  test('a bad literal value points at its argument or input field', () {
+    List<GraphQLError> errors = executor.validate(
+      parseString('{ complicatedArgs { intArgField(intArg: 2147483648) } }'),
+    );
+    expect(errors.single.locations, <SourceLocation>[
+      const SourceLocation(1, 33),
+    ]);
+    errors = executor.validate(
+      parseString(
+        '{ complicatedArgs { complexArgField(complexArg: {requiredField: true, intField: "x"}) } }',
+      ),
+    );
+    expect(errors.single.locations, <SourceLocation>[
+      const SourceLocation(1, 71),
+    ]);
+    errors = executor.validate(
+      parseString(
+        '{ complicatedArgs { stringListArgField(stringListArg: [1, null]) } }',
+      ),
+    );
+    expect(errors.single.locations, <SourceLocation>[
+      const SourceLocation(1, 40),
+    ]);
+  });
+
   test('extra rules run after the spec rules', () {
     GraphQLExecutor<Object?> e = GraphQLExecutor<Object?>(
       schema,

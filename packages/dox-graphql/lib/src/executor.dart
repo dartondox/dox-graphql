@@ -66,8 +66,9 @@ final class GraphQLExecutor<C> {
   final int maxFields;
   final int maxNodes;
 
-  /// Validation stops after this many errors, and a request stops after
-  /// this many field errors.
+  /// The most errors kept. Validation stops at the first error after
+  /// it. A request keeps running, but fields that start after it give
+  /// null; the data built so far is kept. Both add one last error.
   final int maxErrors;
   final bool showInternalErrors;
 
@@ -228,8 +229,8 @@ final class _NullBubble {
   const _NullBubble();
 }
 
-/// Thrown when the execution passes `maxNodes` or `maxErrors`. It stops
-/// the whole request.
+/// Thrown when the execution passes `maxNodes`. It stops the whole
+/// request.
 final class _Stop {
   const _Stop(this.error);
 
@@ -303,8 +304,20 @@ final class _Execution {
     } on _Stop catch (stop) {
       return GraphQLResponse(errors: <GraphQLError>[...errors, stop.error]);
     }
+    if (_tooManyErrors) {
+      errors.add(
+        GraphQLError(
+          'Too many errors: the limit is $maxErrors. Fields after it were '
+          'not run.',
+        ),
+      );
+    }
     return GraphQLResponse(data: data, errors: errors);
   }
+
+  /// Set when an error came after [maxErrors] errors. The data built so far
+  /// is kept; fields that start after it give null.
+  bool _tooManyErrors = false;
 
   /// Set when the request must stop. Every new piece of work checks it.
   _Stop? _stopped;
@@ -456,6 +469,11 @@ final class _Execution {
     Field<Object?, Object?>? def = schema.field(type, name);
     if (def == null) return _skip;
     _spend(1);
+    if (_tooManyErrors) {
+      // After too many errors, new fields are not run: they are null.
+      if (def.type is NonNullType) throw const _NullBubble();
+      return null;
+    }
     try {
       InputValues args = Values.argumentValues(
         def.args,
@@ -496,6 +514,12 @@ final class _Execution {
     ResponsePath path,
   ) {
     _check();
+    if (errors.length >= maxErrors) {
+      // Past the cap: no more errors are kept, and no new work starts.
+      _tooManyErrors = true;
+      if (type is NonNullType) throw const _NullBubble();
+      return null;
+    }
     List<SourceLocation> locations = GraphQLError.locationsOf(nodes);
     errors.add(
       error is GraphQLError
@@ -508,13 +532,6 @@ final class _Execution {
               stackTrace: stackTrace,
             ),
     );
-    if (errors.length >= maxErrors) {
-      throw _stopped = _Stop(
-        GraphQLError(
-          'Too many errors: the limit is $maxErrors. The request was stopped.',
-        ),
-      );
-    }
     if (type is NonNullType) throw const _NullBubble();
     return null;
   }

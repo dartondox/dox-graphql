@@ -113,9 +113,10 @@ final class DocumentValidator {
     _report(GraphQLError.at(message, nodes));
   }
 
+  /// Keeps [error]. An error after [maxErrors] errors stops validation.
   void _report(GraphQLError error) {
-    errors.add(error);
     if (errors.length >= maxErrors) throw const _TooManyErrors();
+    errors.add(error);
   }
 
   /// The last error when validation stopped early.
@@ -227,7 +228,7 @@ final class DocumentValidator {
       }
       ValueNode? defaultValue = def.defaultValue?.value;
       if (defaultValue != null && type != null) {
-        _value(defaultValue, type, false);
+        _value(defaultValue, type, false, def);
       }
       _directives(def.directives, DirectiveLocation.variableDefinition);
     }
@@ -398,7 +399,7 @@ final class DocumentValidator {
       if (defs != null && def == null) {
         _error('Unknown argument "$name" on $unknownOn.', <Node>[n]);
       }
-      _value(n.value, def?.type, def?.defaultValue != null);
+      _value(n.value, def?.type, def?.defaultValue != null, n);
     }
     for (Argument a in defs ?? const <Argument>[]) {
       if (a.isRequired && !seen.contains(a.name)) {
@@ -419,7 +420,7 @@ final class DocumentValidator {
       if (def == null) {
         _error('Unknown directive "@$name".', <Node>[n]);
         for (ArgumentNode a in n.arguments) {
-          _value(a.value, null, false);
+          _value(a.value, null, false, a);
         }
         continue;
       }
@@ -447,8 +448,10 @@ final class DocumentValidator {
   }
 
   /// Checks a value against its expected type. A null type means the place
-  /// is not known; then only variable uses are noted.
-  void _value(ValueNode node, GraphQLType? type, bool hasDefault) {
+  /// is not known; then only variable uses are noted. [owner] is the
+  /// nearest argument, input field or variable definition: gql keeps no
+  /// location on literals, so errors point at the owner.
+  void _value(ValueNode node, GraphQLType? type, bool hasDefault, Node owner) {
     if (node is VariableNode) {
       _uses.variables.add(_VariableUsage(node, type, hasDefault));
       return;
@@ -456,21 +459,24 @@ final class DocumentValidator {
     if (type == null) {
       if (node is ListValueNode) {
         for (ValueNode v in node.values) {
-          _value(v, null, false);
+          _value(v, null, false, owner);
         }
       } else if (node is ObjectValueNode) {
         for (ObjectFieldNode f in node.fields) {
-          _value(f.value, null, false);
+          _value(f.value, null, false, f);
         }
       }
       return;
     }
     if (type is NonNullType) {
       if (node is NullValueNode) {
-        _error('Expected value of type "$type", found null.', <Node>[node]);
+        _error(
+          'Expected value of type "$type", found null.',
+          _where(node, owner),
+        );
         return;
       }
-      _value(node, type.ofType, hasDefault);
+      _value(node, type.ofType, hasDefault, owner);
       return;
     }
     if (node is NullValueNode) return;
@@ -478,18 +484,18 @@ final class DocumentValidator {
       case ListType():
         if (node is ListValueNode) {
           for (ValueNode v in node.values) {
-            _value(v, type.ofType, false);
+            _value(v, type.ofType, false, owner);
           }
         } else {
-          _value(node, type.ofType, false);
+          _value(node, type.ofType, false, owner);
         }
       case InputObjectType():
         if (node is! ObjectValueNode) {
           _error(
             'Expected value of type "${type.name}", found ${printNode(node)}.',
-            <Node>[node],
+            _where(node, owner),
           );
-          _value(node, null, false);
+          _value(node, null, false, owner);
           return;
         }
         Set<String> seen = <String>{};
@@ -507,14 +513,14 @@ final class DocumentValidator {
               <Node>[f],
             );
           }
-          _value(f.value, def?.type, def?.defaultValue != null);
+          _value(f.value, def?.type, def?.defaultValue != null, f);
         }
         for (InputField def in type.fields) {
           if (def.isRequired && !seen.contains(def.name)) {
             _error(
               'Field "${type.name}.${def.name}" of required type '
               '"${def.type}" was not provided.',
-              <Node>[node],
+              _where(node, owner),
             );
           }
         }
@@ -523,13 +529,13 @@ final class DocumentValidator {
           _error(
             'Enum "${type.name}" cannot represent non-enum value: '
             '${printNode(node)}.',
-            <Node>[node],
+            _where(node, owner),
           );
         } else if (type.valueNamed(node.name.value) == null) {
           _error(
             'Value "${node.name.value}" does not exist in "${type.name}" '
             'enum.',
-            <Node>[node],
+            _where(node, owner),
           );
         }
       case ScalarType<Object>():
@@ -539,19 +545,23 @@ final class DocumentValidator {
           _error(
             'Expected value of type "${type.name}", found '
             '${printNode(node)}; ${e.message}',
-            <Node>[node],
+            _where(node, owner),
           );
         } on Object {
           _error(
             'Expected value of type "${type.name}", found '
             '${printNode(node)}.',
-            <Node>[node],
+            _where(node, owner),
           );
         }
       default:
         break;
     }
   }
+
+  /// [node] when it has a location, else [owner].
+  static List<Node> _where(ValueNode node, Node owner) =>
+      GraphQLError.locationOf(node) != null ? <Node>[node] : <Node>[owner];
 
   /// The most work the fragment and variable checks may do.
   static const int _budget = 500000;
@@ -639,17 +649,19 @@ final class DocumentValidator {
     }
   }
 
-  /// The variable uses of a fragment and all fragments it reaches, without
-  /// repeats: one use per name, place type and default. Each fragment is
-  /// done once, with its own stack.
-  final Map<String, Map<String, _VariableUsage>> _fragmentVariables =
-      <String, Map<String, _VariableUsage>>{};
+  /// The variable uses of a fragment and all fragments it reaches, by
+  /// name, place type and default. Uses with one key pass or fail the
+  /// checks together, so each key is checked once per operation; every
+  /// use of a failing key gets its own error. Each fragment is done once,
+  /// with its own stack.
+  final Map<String, Map<String, List<_VariableUsage>>> _fragmentVariables =
+      <String, Map<String, List<_VariableUsage>>>{};
 
   static String _usageKey(_VariableUsage u) =>
       '${u.node.name.value}|${u.type}|${u.hasDefault}';
 
-  Map<String, _VariableUsage> _variablesOf(String fragment) {
-    Map<String, _VariableUsage>? known = _fragmentVariables[fragment];
+  Map<String, List<_VariableUsage>> _variablesOf(String fragment) {
+    Map<String, List<_VariableUsage>>? known = _fragmentVariables[fragment];
     if (known != null) return known;
     Set<String> started = <String>{};
     List<String> stack = <String>[fragment];
@@ -661,7 +673,7 @@ final class DocumentValidator {
       }
       _DefinitionUses? uses = _fragmentUses[name];
       if (uses == null) {
-        _fragmentVariables[name] = <String, _VariableUsage>{};
+        _fragmentVariables[name] = <String, List<_VariableUsage>>{};
         stack.removeLast();
         continue;
       }
@@ -677,27 +689,46 @@ final class DocumentValidator {
         continue;
       }
       stack.removeLast();
-      Map<String, _VariableUsage> out = _ownVariables(uses);
+      Map<String, List<_VariableUsage>> out = _ownVariables(uses);
+      Set<String> spread = <String>{};
       for (FragmentSpreadNode s in uses.spreads) {
-        Map<String, _VariableUsage>? sub = _fragmentVariables[s.name.value];
-        if (sub == null) continue;
-        _spend(sub.length);
-        for (MapEntry<String, _VariableUsage> e in sub.entries) {
-          out.putIfAbsent(e.key, () => e.value);
-        }
+        if (!spread.add(s.name.value)) continue;
+        Map<String, List<_VariableUsage>>? sub =
+            _fragmentVariables[s.name.value];
+        if (sub != null) _merge(out, sub);
       }
       _fragmentVariables[name] = out;
     }
     return _fragmentVariables[fragment]!;
   }
 
-  Map<String, _VariableUsage> _ownVariables(_DefinitionUses uses) {
+  void _merge(
+    Map<String, List<_VariableUsage>> into,
+    Map<String, List<_VariableUsage>> from,
+  ) {
+    for (MapEntry<String, List<_VariableUsage>> e in from.entries) {
+      _spend(e.value.length);
+      (into[e.key] ??= <_VariableUsage>[]).addAll(e.value);
+    }
+  }
+
+  Map<String, List<_VariableUsage>> _ownVariables(_DefinitionUses uses) {
     _spend(uses.variables.length);
-    Map<String, _VariableUsage> out = <String, _VariableUsage>{};
+    Map<String, List<_VariableUsage>> out = <String, List<_VariableUsage>>{};
     for (_VariableUsage u in uses.variables) {
-      out.putIfAbsent(_usageKey(u), () => u);
+      (out[_usageKey(u)] ??= <_VariableUsage>[]).add(u);
     }
     return out;
+  }
+
+  void _addGroups(
+    Map<String, List<List<_VariableUsage>>> groups,
+    Map<String, List<_VariableUsage>> uses,
+  ) {
+    _spend(uses.length);
+    for (MapEntry<String, List<_VariableUsage>> e in uses.entries) {
+      (groups[e.key] ??= <List<_VariableUsage>>[]).add(e.value);
+    }
   }
 
   void _checkVariables(OperationDefinitionNode op, _DefinitionUses uses) {
@@ -706,41 +737,56 @@ final class DocumentValidator {
       for (VariableDefinitionNode d in op.variableDefinitions)
         d.variable.name.value: d,
     };
-    Map<String, _VariableUsage> usages = _ownVariables(uses);
+    // The use lists of each key, from the operation and its fragments.
+    // They are not copied: only a failing key walks its uses.
+    Map<String, List<List<_VariableUsage>>> groups =
+        <String, List<List<_VariableUsage>>>{};
+    _addGroups(groups, _ownVariables(uses));
     Set<String> spread = <String>{};
     for (FragmentSpreadNode s in uses.spreads) {
-      if (!spread.add(s.name.value)) continue;
-      Map<String, _VariableUsage> sub = _variablesOf(s.name.value);
-      _spend(sub.length);
-      for (MapEntry<String, _VariableUsage> e in sub.entries) {
-        usages.putIfAbsent(e.key, () => e.value);
+      if (spread.add(s.name.value)) {
+        _addGroups(groups, _variablesOf(s.name.value));
       }
     }
+
     Set<String> used = <String>{};
-    for (_VariableUsage u in usages.values) {
-      String name = u.node.name.value;
+    for (List<List<_VariableUsage>> lists in groups.values) {
+      _VariableUsage first = lists.first.first;
+      String name = first.node.name.value;
       used.add(name);
       VariableDefinitionNode? def = defs[name];
-      if (def == null) {
-        _error(
-          opName == null
-              ? 'Variable "\$$name" is not defined.'
-              : 'Variable "\$$name" is not defined by operation "$opName".',
-          <Node>[u.node, op],
-        );
+      GraphQLType? location = first.type;
+      GraphQLType? varType = def == null
+          ? null
+          : Values.typeFromAst(schema, def.type);
+      if (def != null &&
+          (location == null ||
+              varType == null ||
+              !varType.isInputType ||
+              _allowed(varType, def, location, first.hasDefault))) {
         continue;
       }
-      GraphQLType? location = u.type;
-      GraphQLType? varType = Values.typeFromAst(schema, def.type);
-      if (location == null || varType == null || !varType.isInputType) {
-        continue;
-      }
-      if (!_allowed(varType, def, location, u.hasDefault)) {
-        _error(
-          'Variable "\$$name" of type "$varType" used in position expecting '
-          'type "$location".',
-          <Node>[def, u.node],
-        );
+      // One error per use. A fragment reached twice gives its uses once.
+      Set<VariableNode> reported = Set<VariableNode>.identity();
+      for (List<_VariableUsage> list in lists) {
+        for (_VariableUsage u in list) {
+          if (!reported.add(u.node)) continue;
+          if (def == null) {
+            _error(
+              opName == null
+                  ? 'Variable "\$$name" is not defined.'
+                  : 'Variable "\$$name" is not defined by operation '
+                        '"$opName".',
+              <Node>[u.node, op],
+            );
+          } else {
+            _error(
+              'Variable "\$$name" of type "$varType" used in position '
+              'expecting type "$location".',
+              <Node>[def, u.node],
+            );
+          }
+        }
       }
     }
     for (VariableDefinitionNode d in op.variableDefinitions) {
