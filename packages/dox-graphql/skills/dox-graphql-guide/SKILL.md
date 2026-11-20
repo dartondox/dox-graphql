@@ -68,6 +68,8 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
 | `maxQueryLength` | `1000000` | The maximum number of characters in a query. |
 | `maxFields` | `20000` | The maximum number of fields in one query. |
 | `maxNodes` | `100000` | The maximum number of values in one request. |
+| `maxRootFields` | `50` | The maximum number of top-level fields in one request. Each alias counts. |
+| `maxRelationRows` | `50000` | The maximum number of rows that one relation loads for all parents together. |
 | `maxErrors` | `100` | The maximum number of errors in one response. |
 
 "On in development" means on when `APP_ENV` is `development`. Do not set these three to `true` in production. Set lower `max` values for a public API.
@@ -101,7 +103,7 @@ The `id`, the columns and the relations become fields. The model gets these auto
 | `updatePost(id, input)` | `dto:` and `policy:` | Changes and checks only the sent fields. `null` if the id is not found. |
 | `deletePost(id)` | `dto:` and `policy:` | Gives `true`, or `false` if the id is not found. |
 
-- The list query, the find query and the relations do not ask the policy today. Thus, `auth: true` is only a login check: each logged-in user can read all rows. For a private model, use `queries: false` and write a `@GraphQLQuery` that gives only the rows of the logged-in user. Put secret columns in `hidden`. A relation to the model still gives its rows.
+- `auth: true` is only a login check. To control which rows a user can read, give the model a `policy:` with `viewAny` and `view` (see section 5). Put secret columns in `hidden`.
 - `queries: false` removes the list and find queries. The type stays for relations and resolvers.
 - `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it.
 - A column or relation in `hidden` of the model is not a field. `hidden` uses the snake_case name of the column or relation, for example `password_hash`, not the Dart field name. If `visibleFields` of the model is not empty, only those names are fields. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.
@@ -183,7 +185,20 @@ Change the rule with `auth:`:
 - The auth middleware never stops the request. A guest gets an error only for the fields that need a login. The other fields give their data.
 - The client sends `Authorization: Bearer <token>`.
 
-Update and delete ask a `dox_auth` policy. Write `update` and `delete` abilities:
+The automatic fields ask a `dox_auth` policy, when the policy lists the ability in `abilities`:
+
+| Ability | Guards |
+|---|---|
+| `viewAny` | The list query and each relation to the model. Refused: the field is `null` with `FORBIDDEN`. |
+| `view` | The find query. In lists and relations, Dox removes the rows that `view` refuses, so a list can have fewer rows than `limit`. |
+| `create` | The create mutation. |
+| `update`, `delete` | The update and delete mutations. |
+
+Dox reads the keys of `abilities`, not the method names. A guest gets `UNAUTHENTICATED` before Dox reads the database. A missing id gets the same answer as a refused row.
+
+Hand-written `@GraphQLQuery`, `@ResolveField` and getters that return models do not run these checks. Call `Gate` yourself there.
+
+This policy lets each user change only their own posts:
 
 ```dart
 class PostPolicy extends Policy<User, Post> {
@@ -207,7 +222,7 @@ Errors are in the `errors` list of the response. Each field can fail alone. Read
 | Code | Cause |
 |---|---|
 | `UNAUTHENTICATED` | The field needs a login. The resolver did not run. |
-| `FORBIDDEN` | The policy refused an update or a delete. Dox wrote nothing. |
+| `FORBIDDEN` | The policy refused. For a mutation, Dox wrote nothing. |
 | `VALIDATION_FAILED` | The DTO rules failed. `extensions.fields` has one message for each field. |
 
 To send your own message, throw a `GraphQLError`:
@@ -248,11 +263,11 @@ A field error has status 200 also. Always check `errors`.
 - No `build_runner` after a change. The schema is then old, and the new field does not exist.
 - `@GraphQLType()` on a model, but not on the models of its relations.
 - No auth middleware in `GraphQLConfig.middleware`. The full API is then public, with the automatic create mutations.
-- The automatic create mutation does not ask the policy today. It does not call a `create` ability. Only a login protects it. Use `owner:`, or write your own `@GraphQLMutation` and do the check there.
 - `dto:` without `policy:`: the model then gets only the create mutation.
 - `@GraphQLType(auth: false)` on a model with `dto:` and no `owner:`. The create mutation is then public also. To make only reads public, keep the default and write a `@GraphQLQuery(auth: false)`, or use `owner:`.
 - A model with private data, for example `User`, without `auth: true`. A public type or an API without the auth middleware then shows it through relations.
-- `auth: true` as the only protection of private rows. It is a login check, not a policy check. The automatic queries and relations give all rows to each logged-in user. Use `queries: false`, your own `@GraphQLQuery`, and `hidden`.
+- `auth: true` as the only protection of private rows. It is a login check, not a policy check. Add a policy with `viewAny` and `view`.
+- A policy method that is not in `abilities`. Dox does not see it, so it does not check it.
 - A secret column that is not in `hidden` and has no `@GraphQLIgnore()`.
 - The owner column as a DTO field. The client must not send it. Use `owner:`.
 - A relation query in a loop in a resolver. Use `context.loader` with a `DataLoader`.
