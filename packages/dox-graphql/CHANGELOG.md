@@ -10,7 +10,7 @@
   with `auth: true` is protected on every field that gives it, also
   when an interface or union field picks it for its value. A field
   that needs a login fails with `UNAUTHENTICATED`, and its resolver does
-  not run.
+  not run. Introspection stays public.
 - The auth middleware is found by `IAuthMiddleware` of dox_core. The
   release needs the dox_core version that ships `IAuthMiddleware`; the
   dox_core floor goes up then.

@@ -19,6 +19,7 @@ void main() {
     client = await startApp(
       GraphQLConfig(
         schema: authSchema,
+        introspection: true,
         middleware: const <Object>[FakeLoginMiddleware()],
       ),
     );
@@ -221,5 +222,28 @@ void main() {
         },
       });
     });
+  });
+
+  test('a guest can introspect, with no login run', () async {
+    FakeLoginMiddleware.runs = 0;
+    TestResponse res = await send(
+      '{ __schema { queryType { name } types { name } } }',
+    );
+    expect(res.json['errors'], isNull);
+    expect(res.json['data']['__schema']['queryType'], <String, Object?>{
+      'name': 'Query',
+    });
+    res = await send('{ __type(name: "Account") { name fields { name } } }');
+    expect(res.json, <String, Object?>{
+      'data': <String, Object?>{
+        '__type': <String, Object?>{
+          'name': 'Account',
+          'fields': <Object?>[
+            <String, Object?>{'name': 'email'},
+          ],
+        },
+      },
+    });
+    expect(FakeLoginMiddleware.runs, 0);
   });
 }

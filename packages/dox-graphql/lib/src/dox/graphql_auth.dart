@@ -95,7 +95,11 @@ class GraphQLAuth implements FieldGuard {
     ObjectType<Object?, Object?> parent,
     Field<Object?, Object?> field,
   ) {
-    if (field.name.startsWith('__')) return false;
+    // introspection (`__schema`, `__type`, `__typename` and the fields of
+    // `__Schema`, `__Type`, ...) is always public: it shows no data
+    if (field.name.startsWith('__') || parent.name.startsWith('__')) {
+      return false;
+    }
     NamedType type = _named(field.type);
     bool? typeAuth = type is ObjectType<Object?, Object?> ? type.auth : null;
     if (typeAuth == true) return true;
@@ -162,7 +166,7 @@ class GraphQLAuth implements FieldGuard {
     ObjectType<Object?, Object?> type,
     Object? context,
   ) {
-    if (type.auth != true) return null;
+    if (type.auth != true || type.name.startsWith('__')) return null;
     if (context is! DoxGraphQLContext) return _error();
     return _checkUser(context);
   }
