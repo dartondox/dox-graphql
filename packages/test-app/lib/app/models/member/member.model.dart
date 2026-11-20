@@ -8,7 +8,7 @@ part 'member.model.g.dart';
 
 /// `hidden` leaves out a column and a relation.
 @DoxModel(table: 'members')
-@GraphQLType(dto: MemberDto)
+@GraphQLType(dto: MemberDto, auth: true)
 class Member extends MemberGenerator {
   @override
   List<String> get hidden => <String>['secret', 'profile'];

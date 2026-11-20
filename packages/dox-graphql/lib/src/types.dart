@@ -284,6 +284,7 @@ class Field<S, C> {
     this.args = const <Argument>[],
     this.deprecationReason,
     this._resolve,
+    this.auth,
   });
 
   final String name;
@@ -292,6 +293,11 @@ class Field<S, C> {
   final List<Argument> args;
   final String? deprecationReason;
   final FieldResolver<S, C>? _resolve;
+
+  /// True: the field needs a logged-in user. False: the field is public.
+  /// Null: the default of the server. The engine only keeps this value;
+  /// a [FieldGuard] given to the executor checks it.
+  final bool? auth;
 
   bool get isDeprecated => deprecationReason != null;
 

@@ -134,6 +134,7 @@ class SchemaWriter {
     if (field.deprecationReason != null) {
       out.write('deprecationReason: ${_string(field.deprecationReason!)},');
     }
+    if (field.auth != null) out.write('auth: ${field.auth},');
     if (field.args.isNotEmpty) {
       out.write('args: <Argument>[');
       for (ArgSpec arg in field.args) {

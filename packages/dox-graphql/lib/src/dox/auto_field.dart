@@ -12,6 +12,7 @@ class AutoField<S, C> extends Field<S, C> {
     super.args,
     super.deprecationReason,
     super.resolve,
+    super.auth,
   });
 
   /// [schema] without the [AutoField]s of its query and mutation roots.

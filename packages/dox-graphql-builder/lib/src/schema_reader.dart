@@ -145,6 +145,16 @@ class SchemaReader {
       package: 'dox_annotation',
     );
     DartType? dto = type.getField('dto')?.toTypeValue();
+    bool? auth = type.getField('auth')?.toBoolValue();
+    if (model == null && auth != null) {
+      _fail(
+        where,
+        '`auth:` on @GraphQLType works only on a model of dox_orm: it sets '
+        'the login rule of the model queries and writes. Put `auth:` on '
+        'the @GraphQLQuery or @GraphQLMutation that gives this type.',
+        element,
+      );
+    }
     if (model == null && dto != null) {
       _fail(
         where,
@@ -163,6 +173,7 @@ class SchemaReader {
     if (model == null) return;
     spec.orm = true;
     spec.queries = type.getField('queries')?.toBoolValue() ?? true;
+    spec.auth = auth;
     if (dto != null) {
       Element? dtoElement = dto is InterfaceType ? dto.element : null;
       if (dtoElement is! ClassElement || !_dtos.isDto(dtoElement)) {
@@ -333,6 +344,7 @@ class SchemaReader {
           resolve: 'GraphQLOrm.list<$model>($model(), info)',
           where: hint,
           auto: true,
+          auth: spec.auth,
         ),
         'Query',
         element,
@@ -346,6 +358,7 @@ class SchemaReader {
           resolve: 'GraphQLOrm.find<$model>($model(), $id)',
           where: hint,
           auto: true,
+          auth: spec.auth,
         ),
         'Query',
         element,
@@ -478,6 +491,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         resolve: '_create$name(info)',
         where: hint,
         auto: true,
+        auth: spec.auth,
       ),
       'Mutation',
       element,
@@ -491,6 +505,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         resolve: '_update$name(info)',
         where: hint,
         auto: true,
+        auth: spec.auth,
       ),
       'Mutation',
       element,
@@ -504,6 +519,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         resolve: 'GraphQLOrm.delete<$model>($model(), $id)',
         where: hint,
         auto: true,
+        auth: spec.auth,
       ),
       'Mutation',
       element,
@@ -574,6 +590,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
+        auth: field?.getField('auth')?.toBoolValue(),
         column: column,
       ),
       spec.name,
@@ -728,6 +745,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       where: where,
       description: _string(ann, 'description') ?? docOf(method),
       deprecationReason: _string(ann, 'deprecationReason'),
+      auth: ann.getField('auth')?.toBoolValue(),
       args: args,
       isAsync: isAsync,
     );

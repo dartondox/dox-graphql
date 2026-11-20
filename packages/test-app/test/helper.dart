@@ -1,6 +1,9 @@
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
+// TODO: use dox_core IAuthMiddleware, then drop this import.
+// ignore: implementation_imports
+import 'package:dox_graphql/src/dox/graphql_auth.dart' show IAuthMiddleware;
 import 'package:dox_graphql_test_app/generated/container.g.dart';
 import 'package:dox_graphql_test_app/generated/dtos.g.dart';
 
@@ -23,14 +26,35 @@ class FakeAuth implements IAuth {
   Map<String, dynamic>? toJson() => <String, dynamic>{'name': name};
 }
 
-class FakeAuthMiddleware implements IDoxMiddleware {
-  const FakeAuthMiddleware();
+/// A 401, like `UnAuthorizedException` of dox_auth.
+class FakeUnauthorized extends IHttpException {
+  FakeUnauthorized() {
+    code = 401;
+    errorCode = 'unauthorized';
+    message = 'Authentication failed';
+  }
+}
+
+/// Logs in the user named in the `x-user` header. The name `bad` is a bad
+/// token. Like the real auth middleware, it stops a guest with a 401
+/// unless it is optional.
+class FakeAuthMiddleware implements IAuthMiddleware {
+  const FakeAuthMiddleware({this.optional = false});
+
+  final bool optional;
+
+  @override
+  IAuthMiddleware asOptional() => const FakeAuthMiddleware(optional: true);
 
   @override
   IDoxRequest handle(IDoxRequest req) {
     String? name = req.header('x-user');
-    if (name != null) req.auth = FakeAuth(name);
-    return req;
+    if (name != null && name != 'bad') {
+      req.auth = FakeAuth(name);
+      return req;
+    }
+    if (optional) return req;
+    throw FakeUnauthorized();
   }
 }
 
@@ -47,17 +71,23 @@ Future<DoxTestClient> startApp(GraphQLConfig config) {
   );
 }
 
-/// Runs [query] and gives the JSON answer.
+/// Runs [query] as [user] and gives the JSON answer. A null [user] is a
+/// guest.
 Future<Map<String, Object?>> run(
   DoxTestClient client,
   String query, {
   Map<String, Object?>? variables,
   Map<String, String> headers = const <String, String>{},
+  String? user = 'tester',
 }) async {
   TestResponse res = await client.post(
     '/graphql',
     body: <String, Object?>{'query': query, 'variables': ?variables},
-    headers: <String, String>{'accept': 'application/json', ...headers},
+    headers: <String, String>{
+      'accept': 'application/json',
+      'x-user': ?user,
+      ...headers,
+    },
   );
   return res.json as Map<String, Object?>;
 }

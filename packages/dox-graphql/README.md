@@ -127,7 +127,7 @@ import 'package:dox_graphql/dox_graphql.dart';
 
 GraphQLConfig graphqlConfig = GraphQLConfig(
   schema: schema, // a GraphQLSchema<DoxGraphQLContext>
-  middleware: <Object>[AuthMiddleware(optional: true)],
+  middleware: <Object>[AuthMiddleware()],
 );
 ```
 
@@ -158,6 +158,36 @@ Field<Object?, DoxGraphQLContext>(
 - `info.context.make<T>()`: a service from the Dox container.
 - `info.context.loader<K, V>(name, create)`: a `DataLoader` for this
   request only. The first call makes it; later calls get the same one.
+
+### Login
+
+With the auth middleware (`AuthMiddleware()` of dox_auth) in
+`middleware`, every query and mutation field needs a logged-in user.
+Without it, every field is public. `auth:` changes one field:
+
+```dart
+@GraphQLQuery(auth: false) // public, even with the auth middleware
+List<Post> latestPosts() => ...;
+
+@GraphQLMutation(auth: true) // needs a login
+Future<Post> publish(int id) => ...;
+
+@GraphQLType(dto: CreatePostDto, auth: true) // the model queries and writes
+class Post extends PostGenerator {}
+```
+
+- The auth middleware never stops the GraphQL request. A guest or a bad
+  token goes on with no user. A field that needs a login then fails with
+  "Unauthenticated" and `extensions: {code: UNAUTHENTICATED}`. Its
+  resolver does not run. The other fields still give their data.
+- The status stays `200` with the error, as for any field error.
+- A field of an object type (`@GraphQLField`, `@ResolveField`) is public
+  unless it has `auth: true`. So a public query can give its whole
+  object.
+- `auth: true` with no auth middleware stops the app at start, with the
+  name of the field.
+- Introspection still shows every field. The resolvers do not run, so no
+  data leaks.
 
 ### Defaults
 

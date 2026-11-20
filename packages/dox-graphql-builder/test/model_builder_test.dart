@@ -416,5 +416,46 @@ class NotADto {}
 class Post extends Model<Post> {}
 ''', 'Post: `dto:` must be a class with @Dto(), not NotADto.');
     });
+
+    test('auth: goes on the model queries and writes', () async {
+      String out = flat(
+        await _build('''
+@DoxModel(table: 'posts')
+@GraphQLType(dto: CreatePostDto, auth: false)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+  @Column()
+  int? userId;
+  @Column()
+  Status? status;
+  @Column()
+  DateTime? at;
+
+  @GraphQLField(auth: true)
+  String? get secret => title;
+}
+''', dto: _postDto),
+      );
+      for (String name in <String>[
+        'posts',
+        'post',
+        'createPost',
+        'updatePost',
+        'deletePost',
+      ]) {
+        expect(out, contains("AutoField<Object?,DoxGraphQLContext>('$name',"));
+        expect(out, matches(RegExp("\\('$name',[^,]*,auth:false,")));
+      }
+      expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+      expect(out, isNot(contains(flat("'title', graphqlString, auth:"))));
+    });
+
+    test('auth: on a plain class fails', () async {
+      await expectError('''
+@GraphQLType(auth: true)
+class Note {}
+''', 'Note: `auth:` on @GraphQLType works only on a model of dox_orm');
+    });
   });
 }

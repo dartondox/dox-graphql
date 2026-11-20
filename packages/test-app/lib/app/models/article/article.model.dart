@@ -7,7 +7,7 @@ import '../user/user.model.dart';
 part 'article.model.g.dart';
 
 @DoxModel(table: 'articles', softDelete: true)
-@GraphQLType(dto: ArticleDto)
+@GraphQLType(dto: ArticleDto, auth: false)
 class Article extends ArticleGenerator {
   @Column()
   String? title;

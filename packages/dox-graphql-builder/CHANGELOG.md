@@ -3,6 +3,10 @@
 - An app with no GraphQL class yet still gets `lib/generated/schema.g.dart`.
   The schema has one placeholder query, so the app starts. It goes away
   with the first real query.
+- Writes the `auth:` of `@GraphQLType` (on the model queries and writes),
+  `@GraphQLQuery`, `@GraphQLMutation`, `@GraphQLField` and `@ResolveField`
+  into the generated fields. `auth:` on a `@GraphQLType` that is not a
+  model stops the build.
 - First version: builds `lib/generated/schema.g.dart` with
   `graphqlSchema` from `@GraphQLType`, `@GraphQLField`, `@GraphQLIgnore`,
   `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.

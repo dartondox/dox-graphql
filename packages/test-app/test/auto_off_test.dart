@@ -42,4 +42,11 @@ void main() {
     );
     expect(res['errors'], isNull);
   });
+
+  test('with no auth middleware, fields are public by default', () async {
+    Map<String, Object?> res = await run(client, '{ me path }', user: null);
+    expect(res, <String, Object?>{
+      'data': <String, Object?>{'me': null, 'path': '/graphql'},
+    });
+  });
 }

@@ -20,7 +20,12 @@ void main() {
 
   setUpAll(() async {
     await setUpDatabase();
-    client = await startApp(GraphQLConfig(schema: graphqlSchema));
+    client = await startApp(
+      GraphQLConfig(
+        schema: graphqlSchema,
+        middleware: <Object>[const FakeAuthMiddleware()],
+      ),
+    );
   });
 
   tearDownAll(() async {
