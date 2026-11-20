@@ -1,0 +1,95 @@
+name: Release
+
+# Each package has its own tags: <package>-v<version>, eg.
+# dox_graphql-v0.0.1. The version must be the one in
+# packages/<folder>/pubspec.yaml, and the tag must be on main.
+#
+# 1. check the tag, then run all CI tests (ci.yaml). A red test stops
+#    everything after it.
+# 2. publish the package to pub.dev,
+# 3. make the GitHub release of the tag.
+
+on:
+  push:
+    tags:
+      - 'dox_graphql-v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      folder: ${{ steps.tag.outputs.folder }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        id: tag
+        run: |
+          package=${GITHUB_REF_NAME%%-v*}
+          version=${GITHUB_REF_NAME#*-v}
+          folder="packages/${package//_/-}"
+          pubspec="$folder/pubspec.yaml"
+          # the tag must be on main, so the published code is what main has
+          git merge-base --is-ancestor "$GITHUB_SHA" HEAD || { echo "::error::tag $GITHUB_REF_NAME is not on main"; exit 1; }
+          spec=$(git show "$GITHUB_SHA:$pubspec") || { echo "::error::no $pubspec"; exit 1; }
+          v=$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$spec")
+          [ "$v" = "$version" ] || { echo "::error::tag $GITHUB_REF_NAME, $pubspec has $v"; exit 1; }
+          echo "folder=$folder" >> "$GITHUB_OUTPUT"
+
+  # Read access only. The tests run a lot of other code, so they must not
+  # get the pub.dev token.
+  test:
+    needs: check
+    uses: ./.github/workflows/ci.yaml
+    permissions:
+      contents: read
+
+  publish:
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      id-token: write # pub.dev automated publishing (OIDC)
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - name: Publish to pub.dev
+        working-directory: ${{ needs.check.outputs.folder }}
+        run: dart pub publish --force
+
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Make the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # a version with "-" in it is a prerelease
+          pre=()
+          case "${TAG#*-v}" in *-*) pre=(--prerelease) ;; esac
+          # a re-run keeps the release, and its hand-written notes
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" ${pre[@]+"${pre[@]}"} \
+              --title "$TAG" --notes "Release $TAG. See the package CHANGELOG."
+          fi
