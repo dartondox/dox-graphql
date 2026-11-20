@@ -165,6 +165,15 @@ class SchemaReader {
         element,
       );
     }
+    String? owner = _string(type, 'owner');
+    if (owner != null && dto == null) {
+      _fail(
+        where,
+        '`owner:` needs `dto:`: the owner is set by the create mutation, '
+        'and it comes from the DTO.',
+        element,
+      );
+    }
     imports.prefix(element.library);
     ObjectSpec spec = objects[element] = ObjectSpec(
       element,
@@ -209,6 +218,28 @@ class SchemaReader {
       }
       spec.policy = true;
       hasPolicies = true;
+    }
+    if (owner != null) {
+      FieldElement? column = _columnNamed(element, owner);
+      if (column == null) {
+        _fail(
+          where,
+          '`owner:` must be a column of ${element.displayName}, but it has '
+          'no @Column() field "$owner".',
+          element,
+        );
+      }
+      DartType ownerType = column.type;
+      if (!ownerType.isDartCoreInt && !ownerType.isDartCoreString) {
+        _fail(
+          where,
+          '`owner:` "$owner" must be an int or String column, like the id '
+          'of the user, not ${ownerType.getDisplayString()}.',
+          element,
+        );
+      }
+      spec.owner = owner;
+      spec.ownerType = ownerType.isDartCoreInt ? 'int' : 'String';
     }
     spec.primaryKey = model.getField('primaryKey')?.toStringValue() ?? 'id';
     DartType? key = model.getField('primaryKeyType')?.toTypeValue();
@@ -414,6 +445,15 @@ class SchemaReader {
           field.element,
         );
       }
+      if (field.name == spec.owner) {
+        _fail(
+          where,
+          '"${field.name}" is the `owner:` of ${element.displayName}, so it '
+          'can not be in the `dto:`. The create mutation sets it to the id '
+          'of the logged-in user. Remove it from the DTO.',
+          field.element,
+        );
+      }
       FieldElement? column = _columnNamed(element, field.name);
       if (column == null) {
         _fail(
@@ -474,11 +514,16 @@ class SchemaReader {
       }
     }
     String key = camelCase(spec.primaryKey);
+    String? owner = spec.owner;
+    String ownerSet = owner == null
+        ? ''
+        : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
+              "info.context, '${element.displayName}.$owner');";
     functions.add('''
 /// Makes a $name from the input of `create$name`.
 Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
   $dto dto = await ${create.validate}(info.args.input('input')!, info.context);
-  $model model = $model()${sets.join()};
+  $model model = $model()${sets.join()};$ownerSet
   await model.save();
   return model;
 }
@@ -493,7 +538,8 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
         resolve: '_create$name(info)',
         where: hint,
         auto: true,
-        auth: spec.auth,
+        // the owner is the logged-in user, so there must be one
+        auth: owner != null ? true : spec.auth,
       ),
       'Mutation',
       element,

@@ -41,6 +41,8 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   start.
 - `createPost` comes from `dto:`. `updatePost` and `deletePost` exist only
   with `policy:`.
+- `owner: 'userId'` makes `createPost` set `userId` to the logged-in
+  user. Create then needs a login.
 - In a resolver, read the user with `await info.context.user<User>()`.
 
 Read the full docs: https://dartondox.dev/latest/packages/graphql/

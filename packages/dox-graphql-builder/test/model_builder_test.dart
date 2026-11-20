@@ -496,6 +496,106 @@ class Post extends Model<Post> {}
 ''', 'Post: `dto:` must be a class with @Dto(), not NotADto.');
     });
 
+    test('owner: is not a column', () async {
+      await expectError(
+        '''
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, owner: 'authorId')
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+''',
+        'Post: `owner:` must be a column of Post, but it has no @Column() '
+            'field "authorId".',
+        dto: _postDto,
+      );
+    });
+
+    test('owner: is a field of the DTO', () async {
+      await expectError(
+        '''
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, owner: 'userId')
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+  @Column()
+  int? userId;
+  @Column()
+  Status? status;
+  @Column()
+  DateTime? at;
+}
+''',
+        'CreatePostDto.userId: "userId" is the `owner:` of Post, so it can '
+            'not be in the `dto:`.',
+        dto: _postDto,
+      );
+    });
+
+    test('owner: without dto:', () async {
+      await expectError('''
+@DoxModel()
+@GraphQLType(owner: 'userId')
+class Post extends Model<Post> {
+  @Column()
+  int? userId;
+}
+''', 'Post: `owner:` needs `dto:`');
+    });
+
+    test('owner: on a column that is not int or String', () async {
+      await expectError(
+        '''
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, owner: 'at')
+class Post extends Model<Post> {
+  @Column()
+  DateTime? at;
+}
+''',
+        'Post: `owner:` "at" must be an int or String column',
+        dto: _postDto,
+      );
+    });
+
+    test('owner: sets the column in create and needs a login', () async {
+      String out = flat(
+        await _build(
+          '''
+$_user
+@DoxModel(table: 'posts')
+@GraphQLType(dto: TitleDto, auth: false, owner: 'userId')
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+  @Column()
+  int? userId;
+}
+''',
+          dto: '''
+@Dto()
+class TitleDto {
+  TitleDto({required this.title});
+  final String title;
+}
+''',
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'model.userId = await GraphQLAuth.ownerId<int>('
+            "info.context, 'Post.userId');",
+          ),
+        ),
+      );
+      expect(out, matches(RegExp("\\('createPost',[^,]*,auth:true,")));
+      expect(out, matches(RegExp("\\('posts',[^,]*,auth:false,")));
+    });
+
     test('auth: goes on the model queries and writes', () async {
       String out = flat(
         await _build('''

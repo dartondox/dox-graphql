@@ -1,5 +1,10 @@
 ## Unreleased
 
+- New: `owner:` on `@GraphQLType`, like `owner: 'userId'`. The create
+  mutation sets that column to the id of the logged-in user, so a client
+  can not send or change it. Create then always needs a login, even with
+  `auth: false`. A user with no usable id gets an error, and no row is
+  saved. `GraphQLAuth.ownerId` reads the id.
 - `dox add graphql` (`graphql:install`) sets up an app: the packages,
   `lib/config/graphql.dart`, the provider and build_runner. `--no-orm`
   leaves out dox_graphql_orm. It never overwrites a file.

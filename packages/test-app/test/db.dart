@@ -87,6 +87,12 @@ Future<void> setUpDatabase() async {
     table.softDeletes();
     table.timestamps();
   });
+  await Schema().create('notes', (Table table) {
+    table.id();
+    table.string('title');
+    table.integer('user_id');
+    table.timestamps();
+  });
   await QueryBuilder.table('profiles').insertMany(<Map<String, dynamic>>[
     <String, dynamic>{'bio': 'Ada bio', 'user_id': 1},
     <String, dynamic>{'bio': 'Member bio', 'member_id': 1},
