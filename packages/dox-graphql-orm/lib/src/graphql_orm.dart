@@ -94,13 +94,16 @@ class GraphQLOrm {
     Object? q = Function.apply(query, <Object?>[
       <Model<P>>[...parents],
     ]);
-    Map<String, List<R>> rows = <String, List<R>>{};
-    if (q is QueryBuilder<Object?>) {
-      q.limit(maxRows + 1);
-      rows = pivot
-          ? await getManyToMany<P, R>(q, parents)
-          : await getHasMany<P, R>(q, parents);
+    if (q is! QueryBuilder<Object?>) {
+      throw StateError(
+        'The query of relation $P.$name is not a QueryBuilder but '
+        '${q.runtimeType}. Run the dox_orm model builder again.',
+      );
     }
+    q.limit(maxRows + 1);
+    Map<String, List<R>> rows = pivot
+        ? await getManyToMany<P, R>(q, parents)
+        : await getHasMany<P, R>(q, parents);
     int count = 0;
     for (List<R> list in rows.values) {
       count += list.length;

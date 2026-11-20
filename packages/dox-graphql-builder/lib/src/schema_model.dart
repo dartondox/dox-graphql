@@ -90,10 +90,6 @@ class ObjectSpec {
   /// Models: true with a `policy:`, for the update and delete mutations.
   bool policy = false;
 
-  /// Models: the read and create abilities the policy has a method for:
-  /// `viewAny`, `view` and `create`. Each one adds a check.
-  Set<String> abilities = <String>{};
-
   /// Models: true when the user type of the policy is not nullable, so
   /// the policy denies every guest.
   bool guestsDenied = false;

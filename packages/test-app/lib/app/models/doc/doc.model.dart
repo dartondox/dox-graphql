@@ -26,4 +26,8 @@ class Doc extends DocGenerator {
   /// A single relation to a model whose policy has `view`.
   @BelongsTo(Doc, foreignKey: 'parent_id')
   Doc? parent;
+
+  /// The doc whose parent this one is: a HasOne relation.
+  @HasOne(Doc, foreignKey: 'parent_id')
+  Doc? child;
 }

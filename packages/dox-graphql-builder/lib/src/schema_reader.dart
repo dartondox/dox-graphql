@@ -218,7 +218,6 @@ class SchemaReader {
         );
       }
       spec.policy = true;
-      spec.abilities = _readAbilities(policy as InterfaceType);
       spec.guestsDenied =
           base.typeArguments.first.nullabilitySuffix !=
           NullabilitySuffix.question;
@@ -416,16 +415,14 @@ class SchemaReader {
     }
     Element? element = related is InterfaceType ? related.element : null;
     ObjectSpec? target = objects[element];
-    if (target == null) return code;
+    if (target == null || !target.policy) return code;
     String relatedModel = imports.nonNullCode(related);
-    // `view` drops the related rows it denies; a single one becomes null
-    if (target.abilities.contains('view')) {
-      code = identical(related, type)
-          ? '_viewOne<$relatedModel>(info, $code)'
-          : '_viewList<$relatedModel>(info, $code)';
-    }
-    if (!target.abilities.contains('viewAny')) return code;
-    return "_allow(info, 'viewAny', $relatedModel).then((_) => $code)";
+    // at run time: `viewAny` gates the field, `view` drops the related
+    // rows it denies (a single one becomes null), when the policy has them
+    code = identical(related, type)
+        ? '_viewOne<$relatedModel>(info, $code)'
+        : '_viewList<$relatedModel>(info, $code)';
+    return "_allowIf<$relatedModel>(info, 'viewAny').then((_) => $code)";
   }
 
   /// The list and find queries, and with `dto:` the create, update and
@@ -444,24 +441,28 @@ class SchemaReader {
     String guest = spec.guestsDenied ? '\n  await _login(info);' : '';
     String list = 'GraphQLOrm.list<$model>($model(), info)';
     String find = 'GraphQLOrm.find<$model>($model(), $id)';
-    // `view` drops the rows it denies, so a list can have fewer rows than
-    // `limit`
-    if (spec.abilities.contains('view')) {
-      list = '_viewList<$model>(info, $list)';
-    }
-    if (spec.queries && spec.abilities.contains('viewAny')) {
-      list = "_allow(info, 'viewAny', $model).then((_) => $list)";
-    }
-    if (spec.queries && spec.abilities.contains('view')) {
+    // The policy decides at run time (Gate.hasAbility): `viewAny` gates
+    // the list, `view` drops the rows it denies, so a list can have fewer
+    // rows than `limit`.
+    String guestIfView = spec.guestsDenied
+        ? '\n  if (view) await _login(info);'
+        : '';
+    if (spec.policy && spec.queries) {
+      list =
+          "_allowIf<$model>(info, 'viewAny').then((_) => "
+          '_viewList<$model>(info, $list))';
       functions.add('''
-/// The $name with the id, after the `view` check of the policy. A missing
-/// id is checked as a blank $name, so a user the policy denies gets the
-/// same error for an id that exists and one that does not.
-Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
+/// The $name with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank $name, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
+Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
+  bool view = Gate.hasAbility<$model>('view');$guestIfView
   $model? model = await $find;
-  await (model == null
-      ? _allowMissing(info, 'view', $model())
-      : _allow(info, 'view', model));
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', $model())
+        : _allow(info, 'view', model));
+  }
   return model;
 }
 ''');
@@ -601,8 +602,8 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         ? ''
         : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
               "info.context, '${element.displayName}.$owner');";
-    String allowCreate = spec.abilities.contains('create')
-        ? "\n  await _allow(info, 'create', $model);"
+    String allowCreate = spec.policy
+        ? "\n  await _allowIf<$model>(info, 'create');"
         : '';
     functions.add('''
 /// Makes a $name from the input of `create$name`.
@@ -718,21 +719,6 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
       return m is InterfaceType && m.element == model ? t : null;
     }
     return null;
-  }
-
-  /// The read and create abilities [policy] has a method for. Gate denies
-  /// an ability that a policy does not list, so a check runs only for a
-  /// method the policy has. A method that is not in `abilities` denies.
-  static Set<String> _readAbilities(InterfaceType policy) {
-    // ponytail: the method name is the ability name, like the dox_auth
-    // docs. An ability listed under another method name is not seen.
-    return <String>{
-      for (InterfaceType t in <InterfaceType>[policy, ...policy.allSupertypes])
-        for (MethodElement m in t.element.methods)
-          if (const <String>['viewAny', 'view', 'create'].contains(m.name) &&
-              !m.isStatic)
-            m.name!,
-    };
   }
 
   static EnumElement _enumOf(DtoType type) {

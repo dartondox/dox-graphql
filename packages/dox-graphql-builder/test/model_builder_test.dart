@@ -383,29 +383,31 @@ class Post extends Model<Post> {
       // a database error on the blank row is not turned into FORBIDDEN
       expect(out, contains(flat('} on TypeError { allowed = false; }')));
       expect(out, isNot(contains('catch (_)')));
-      // the policy has no viewAny, view or create: no read or create check
-      expect(out, isNot(contains("_allow(info, 'viewAny'")));
-      expect(out, isNot(contains(flat("_allowMissing(info, 'view'"))));
-      expect(out, isNot(contains('_viewList<i1.Post>(info, GraphQLOrm')));
-      expect(out, isNot(contains("_allow(info, 'create'")));
-      expect(out, contains(flat('GraphQLOrm.list<i1.Post>(i1.Post(), info)')));
+      // the read and create checks are decided at run time by the
+      // abilities of the registered policy, not by method names
+      expect(
+        out,
+        contains(
+          flat(
+            'if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(flat("bool view = Gate.hasAbility<i1.Post>('view');")),
+      );
+      // a guest can never pass a Policy<User, ...>
+      expect(out, contains(flat('if (view) await _login(info);')));
     });
 
-    test('policy: with viewAny, view and create checks the reads', () async {
+    test('policy: the reads, create and relations ask Gate', () async {
       String out = flat(
         await _build('''
 $_user
 class PostPolicy extends Policy<User?, Post> {
-  bool viewAny(User? user) => true;
-  bool view(User? user, Post post) => true;
-  bool create(User? user) => true;
-
   @override
-  Map<String, Function> get abilities => <String, Function>{
-    'viewAny': viewAny,
-    'view': view,
-    'create': create,
-  };
+  Map<String, Function> get abilities => <String, Function>{};
 }
 
 @DoxModel()
@@ -429,7 +431,7 @@ class Blog extends Model<Blog> {
         out,
         contains(
           flat(
-            "_allow(info, 'viewAny', i1.Post).then((_) => "
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
             '_viewList<i1.Post>(info, GraphQLOrm.list<i1.Post>(i1.Post(), '
             'info)))',
           ),
@@ -441,7 +443,8 @@ class Blog extends Model<Blog> {
         contains(
           flat(
             'Future<i1.Post?> _findPost(ResolveInfo<DoxGraphQLContext> info) '
-            'async { i1.Post? model',
+            "async { bool view = Gate.hasAbility<i1.Post>('view'); "
+            'i1.Post? model',
           ),
         ),
       );
@@ -449,8 +452,8 @@ class Blog extends Model<Blog> {
         out,
         contains(
           flat(
-            "await (model == null ? _allowMissing(info, 'view', i1.Post()) "
-            ": _allow(info, 'view', model));",
+            "if (view) { await (model == null ? _allowMissing(info, 'view', "
+            "i1.Post()) : _allow(info, 'view', model)); }",
           ),
         ),
       );
@@ -459,7 +462,7 @@ class Blog extends Model<Blog> {
         contains(
           flat(
             'ResolveInfo<DoxGraphQLContext> info) async { '
-            "await _allow(info, 'create', i1.Post);",
+            "await _allowIf<i1.Post>(info, 'create');",
           ),
         ),
       );
@@ -468,7 +471,7 @@ class Blog extends Model<Blog> {
         out,
         contains(
           flat(
-            "_allow(info, 'viewAny', i1.Post).then((_) => "
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
             '_viewList<i1.Post>(info, GraphQLOrm.many<i1.Blog, i1.Post>(s, '
             "'posts', info.context, (i1.Blog p) => p.posts)))",
           ),
@@ -478,7 +481,7 @@ class Blog extends Model<Blog> {
         out,
         contains(
           flat(
-            "_allow(info, 'viewAny', i1.Post).then((_) => "
+            "_allowIf<i1.Post>(info, 'viewAny').then((_) => "
             '_viewOne<i1.Post>(info, GraphQLOrm.relation<i1.Blog, i1.Post?>('
             "s, 'top', info.context, (i1.Blog p) => p.top)))",
           ),

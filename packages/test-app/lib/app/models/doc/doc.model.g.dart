@@ -47,11 +47,13 @@ class DocGenerator extends Model<Doc> {
   @override
   Map<String, Function> get relationsResultMatcher => const <String, Function>{
     'parent': getParent,
+    'child': getChild,
   };
 
   @override
   Map<String, Function> get relationsQueryMatcher => const <String, Function>{
     'parent': queryParent,
+    'child': queryChild,
   };
 
   static Future<void> getParent(List<Model<Doc>> list) async {
@@ -68,6 +70,17 @@ class DocGenerator extends Model<Doc> {
       foreignKey: 'parent_id',
       relation: 'parent',
     );
+  }
+
+  static Future<void> getChild(List<Model<Doc>> list) async {
+    var result = await getHasOne<Doc, Doc>(queryChild(list), list);
+    for (dynamic i in list) {
+      i.child = result[i.tempIdValue.toString()];
+    }
+  }
+
+  static Doc? queryChild(List<Model<Doc>> list) {
+    return hasOne<Doc, Doc>(list, () => Doc(), foreignKey: 'parent_id');
   }
 
   @override
@@ -131,6 +144,9 @@ class DocGenerator extends Model<Doc> {
     List<String> preload = getPreload();
     if (preload.contains('parent')) {
       map['parent'] = toMap(instance.parent);
+    }
+    if (preload.contains('child')) {
+      map['child'] = toMap(instance.child);
     }
 
     return map;

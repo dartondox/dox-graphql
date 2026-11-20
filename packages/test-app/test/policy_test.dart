@@ -100,6 +100,38 @@ void main() {
       expect(res.toString(), isNot(contains('Bob doc')));
     });
 
+    test('view works through a HasOne relation too', () async {
+      // the child of Bob doc is Ann doc: bob may not view it
+      Map<String, Object?> res = await run(
+        client,
+        '{ docs { title child { title } } }',
+        user: 'bob',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{'title': 'Bob doc', 'child': null},
+          ],
+        },
+      });
+      res = await run(
+        client,
+        '{ docs { title child { title } } }',
+        user: 'ann',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{
+              'title': 'Ann doc',
+              'child': <String, Object?>{'title': 'Ann note'},
+            },
+            <String, Object?>{'title': 'Ann note', 'child': null},
+          ],
+        },
+      });
+    });
+
     test('a list can give fewer rows than limit', () async {
       Map<String, Object?> res = await run(
         client,

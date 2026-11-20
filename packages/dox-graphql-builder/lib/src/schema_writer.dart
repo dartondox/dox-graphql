@@ -52,14 +52,22 @@ Future<void> _allowMissing(
   if (!allowed) throw _denied(user);
 }
 
-/// The rows of [rows] that the `view` ability of the policy allows. The
-/// others are left out, with no error.
+/// [_allow] on the model type [T], when the policy of [T] lists
+/// [ability] (`viewAny`, `create`). Else nothing is checked.
+Future<void> _allowIf<T>(ResolveInfo<$_context> info, String ability) async {
+  if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);
+}
+
+/// The rows of [rows] that the `view` ability of the policy allows, when
+/// the policy of [T] lists `view`. The others are left out, with no error.
 Future<List<T>?> _viewList<T extends Object>(
   ResolveInfo<$_context> info,
   Future<List<T>?> rows,
 ) async {
   List<T>? list = await rows;
-  if (list == null || list.isEmpty) return list;
+  if (list == null || list.isEmpty || !Gate.hasAbility<T>('view')) {
+    return list;
+  }
   Object? user = await info.context.user<Object>();
   return <T>[
     for (T row in list)
@@ -67,13 +75,14 @@ Future<List<T>?> _viewList<T extends Object>(
   ];
 }
 
-/// [row] when the `view` ability of the policy allows it, else null.
+/// [row] when the `view` ability of the policy allows it (or the policy
+/// of [T] does not list `view`), else null.
 Future<T?> _viewOne<T extends Object>(
   ResolveInfo<$_context> info,
   Future<T?> row,
 ) async {
   T? value = await row;
-  if (value == null) return null;
+  if (value == null || !Gate.hasAbility<T>('view')) return value;
   Object? user = await info.context.user<Object>();
   return await Gate.allows(user, 'view', value) ? value : null;
 }

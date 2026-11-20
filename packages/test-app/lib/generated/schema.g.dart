@@ -70,7 +70,12 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.list<i3.Article>(i3.Article(), info),
+            _allowIf<i3.Article>(info, 'viewAny').then(
+              (_) => _viewList<i3.Article>(
+                info,
+                GraphQLOrm.list<i3.Article>(i3.Article(), info),
+              ),
+            ),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'article',
@@ -78,10 +83,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.find<i3.Article>(
-              i3.Article(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _findArticle(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'docs',
@@ -92,7 +94,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            _allow(info, 'viewAny', i5.Doc).then(
+            _allowIf<i5.Doc>(info, 'viewAny').then(
               (_) => _viewList<i5.Doc>(
                 info,
                 GraphQLOrm.list<i5.Doc>(i5.Doc(), info),
@@ -116,7 +118,12 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.list<i7.Member>(i7.Member(), info),
+            _allowIf<i7.Member>(info, 'viewAny').then(
+              (_) => _viewList<i7.Member>(
+                info,
+                GraphQLOrm.list<i7.Member>(i7.Member(), info),
+              ),
+            ),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'member',
@@ -124,10 +131,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.find<i7.Member>(
-              i7.Member(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _findMember(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'notes',
@@ -138,7 +142,12 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.list<i8.Note>(i8.Note(), info),
+            _allowIf<i8.Note>(info, 'viewAny').then(
+              (_) => _viewList<i8.Note>(
+                info,
+                GraphQLOrm.list<i8.Note>(i8.Note(), info),
+              ),
+            ),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'note',
@@ -146,10 +155,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.find<i8.Note>(
-              i8.Note(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _findNote(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'posts',
@@ -160,7 +166,12 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
           Argument('offset', graphqlInt, defaultValue: '0'),
         ],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.list<i9.Post>(i9.Post(), info),
+            _allowIf<i9.Post>(info, 'viewAny').then(
+              (_) => _viewList<i9.Post>(
+                info,
+                GraphQLOrm.list<i9.Post>(i9.Post(), info),
+              ),
+            ),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'post',
@@ -168,10 +179,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-            GraphQLOrm.find<i9.Post>(
-              i9.Post(),
-              int.tryParse(info.args.get<String>('id')!),
-            ),
+            _findPost(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'users',
@@ -548,7 +556,7 @@ final ObjectType<i2.Account, DoxGraphQLContext> _tAccount =
               'docs',
               _tDoc.nonNull.list,
               resolve: (i2.Account s, ResolveInfo<DoxGraphQLContext> info) =>
-                  _allow(info, 'viewAny', i5.Doc).then(
+                  _allowIf<i5.Doc>(info, 'viewAny').then(
                     (_) => _viewList<i5.Doc>(
                       info,
                       GraphQLOrm.many<i2.Account, i5.Doc>(
@@ -651,11 +659,16 @@ final ObjectType<i4.Comment, DoxGraphQLContext> _tComment =
               'post',
               _tPost,
               resolve: (i4.Comment s, ResolveInfo<DoxGraphQLContext> info) =>
-                  GraphQLOrm.relation<i4.Comment, i9.Post?>(
-                    s,
-                    'post',
-                    info.context,
-                    (i4.Comment p) => p.post,
+                  _allowIf<i9.Post>(info, 'viewAny').then(
+                    (_) => _viewOne<i9.Post>(
+                      info,
+                      GraphQLOrm.relation<i4.Comment, i9.Post?>(
+                        s,
+                        'post',
+                        info.context,
+                        (i4.Comment p) => p.post,
+                      ),
+                    ),
                   ),
             ),
         ];
@@ -712,7 +725,7 @@ _tDoc = ObjectType<i5.Doc, DoxGraphQLContext>(
           _tDoc,
           description: 'A single relation to a model whose policy has `view`.',
           resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
-              _allow(info, 'viewAny', i5.Doc).then(
+              _allowIf<i5.Doc>(info, 'viewAny').then(
                 (_) => _viewOne<i5.Doc>(
                   info,
                   GraphQLOrm.relation<i5.Doc, i5.Doc?>(
@@ -720,6 +733,24 @@ _tDoc = ObjectType<i5.Doc, DoxGraphQLContext>(
                     'parent',
                     info.context,
                     (i5.Doc p) => p.parent,
+                  ),
+                ),
+              ),
+        ),
+      if (show('child'))
+        Field<i5.Doc, DoxGraphQLContext>(
+          'child',
+          _tDoc,
+          description: 'The doc whose parent this one is: a HasOne relation.',
+          resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
+              _allowIf<i5.Doc>(info, 'viewAny').then(
+                (_) => _viewOne<i5.Doc>(
+                  info,
+                  GraphQLOrm.relation<i5.Doc, i5.Doc?>(
+                    s,
+                    'child',
+                    info.context,
+                    (i5.Doc p) => p.child,
                   ),
                 ),
               ),
@@ -1064,11 +1095,16 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
           'posts',
           _tPost.nonNull.list.nonNull,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
-              GraphQLOrm.many<i12.User, i9.Post>(
-                s,
-                'posts',
-                info.context,
-                (i12.User p) => p.posts,
+              _allowIf<i9.Post>(info, 'viewAny').then(
+                (_) => _viewList<i9.Post>(
+                  info,
+                  GraphQLOrm.many<i12.User, i9.Post>(
+                    s,
+                    'posts',
+                    info.context,
+                    (i12.User p) => p.posts,
+                  ),
+                ),
               ),
         ),
       if (show('profile'))
@@ -1088,11 +1124,16 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
           'articles',
           _tArticle.nonNull.list.nonNull,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
-              GraphQLOrm.many<i12.User, i3.Article>(
-                s,
-                'articles',
-                info.context,
-                (i12.User p) => p.articles,
+              _allowIf<i3.Article>(info, 'viewAny').then(
+                (_) => _viewList<i3.Article>(
+                  info,
+                  GraphQLOrm.many<i12.User, i3.Article>(
+                    s,
+                    'articles',
+                    info.context,
+                    (i12.User p) => p.articles,
+                  ),
+                ),
               ),
         ),
     ];
@@ -1347,8 +1388,27 @@ Future<i20.CreateBook> _vCreateBookInput(
   );
 }
 
+/// The Article with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank Article, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
+Future<i3.Article?> _findArticle(ResolveInfo<DoxGraphQLContext> info) async {
+  bool view = Gate.hasAbility<i3.Article>('view');
+  if (view) await _login(info);
+  i3.Article? model = await GraphQLOrm.find<i3.Article>(
+    i3.Article(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', i3.Article())
+        : _allow(info, 'view', model));
+  }
+  return model;
+}
+
 /// Makes a Article from the input of `createArticle`.
 Future<i3.Article> _createArticle(ResolveInfo<DoxGraphQLContext> info) async {
+  await _allowIf<i3.Article>(info, 'create');
   i13.ArticleDto dto = await _vCreateArticleInput(
     info.args.input('input')!,
     info.context,
@@ -1405,24 +1465,27 @@ Future<bool> _deleteArticle(ResolveInfo<DoxGraphQLContext> info) async {
   return true;
 }
 
-/// The Doc with the id, after the `view` check of the policy. A missing
-/// id is checked as a blank Doc, so a user the policy denies gets the
-/// same error for an id that exists and one that does not.
+/// The Doc with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank Doc, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
 Future<i5.Doc?> _findDoc(ResolveInfo<DoxGraphQLContext> info) async {
-  await _login(info);
+  bool view = Gate.hasAbility<i5.Doc>('view');
+  if (view) await _login(info);
   i5.Doc? model = await GraphQLOrm.find<i5.Doc>(
     i5.Doc(),
     int.tryParse(info.args.get<String>('id')!),
   );
-  await (model == null
-      ? _allowMissing(info, 'view', i5.Doc())
-      : _allow(info, 'view', model));
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', i5.Doc())
+        : _allow(info, 'view', model));
+  }
   return model;
 }
 
 /// Makes a Doc from the input of `createDoc`.
 Future<i5.Doc> _createDoc(ResolveInfo<DoxGraphQLContext> info) async {
-  await _allow(info, 'create', i5.Doc);
+  await _allowIf<i5.Doc>(info, 'create');
   i14.DocDto dto = await _vCreateDocInput(
     info.args.input('input')!,
     info.context,
@@ -1479,8 +1542,27 @@ Future<bool> _deleteDoc(ResolveInfo<DoxGraphQLContext> info) async {
   return true;
 }
 
+/// The Member with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank Member, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
+Future<i7.Member?> _findMember(ResolveInfo<DoxGraphQLContext> info) async {
+  bool view = Gate.hasAbility<i7.Member>('view');
+  if (view) await _login(info);
+  i7.Member? model = await GraphQLOrm.find<i7.Member>(
+    i7.Member(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', i7.Member())
+        : _allow(info, 'view', model));
+  }
+  return model;
+}
+
 /// Makes a Member from the input of `createMember`.
 Future<i7.Member> _createMember(ResolveInfo<DoxGraphQLContext> info) async {
+  await _allowIf<i7.Member>(info, 'create');
   i15.MemberDto dto = await _vCreateMemberInput(
     info.args.input('input')!,
     info.context,
@@ -1540,8 +1622,27 @@ Future<bool> _deleteMember(ResolveInfo<DoxGraphQLContext> info) async {
   return true;
 }
 
+/// The Note with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank Note, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
+Future<i8.Note?> _findNote(ResolveInfo<DoxGraphQLContext> info) async {
+  bool view = Gate.hasAbility<i8.Note>('view');
+  if (view) await _login(info);
+  i8.Note? model = await GraphQLOrm.find<i8.Note>(
+    i8.Note(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', i8.Note())
+        : _allow(info, 'view', model));
+  }
+  return model;
+}
+
 /// Makes a Note from the input of `createNote`.
 Future<i8.Note> _createNote(ResolveInfo<DoxGraphQLContext> info) async {
+  await _allowIf<i8.Note>(info, 'create');
   i16.NoteDto dto = await _vCreateNoteInput(
     info.args.input('input')!,
     info.context,
@@ -1599,8 +1700,27 @@ Future<bool> _deleteNote(ResolveInfo<DoxGraphQLContext> info) async {
   return true;
 }
 
+/// The Post with the id, after the `view` check of the policy when it has
+/// one. A missing id is checked as a blank Post, so a user the policy
+/// denies gets the same error for an id that exists and one that does not.
+Future<i9.Post?> _findPost(ResolveInfo<DoxGraphQLContext> info) async {
+  bool view = Gate.hasAbility<i9.Post>('view');
+  if (view) await _login(info);
+  i9.Post? model = await GraphQLOrm.find<i9.Post>(
+    i9.Post(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  if (view) {
+    await (model == null
+        ? _allowMissing(info, 'view', i9.Post())
+        : _allow(info, 'view', model));
+  }
+  return model;
+}
+
 /// Makes a Post from the input of `createPost`.
 Future<i9.Post> _createPost(ResolveInfo<DoxGraphQLContext> info) async {
+  await _allowIf<i9.Post>(info, 'create');
   i17.CreatePostDto dto = await _vCreatePostInput(
     info.args.input('input')!,
     info.context,
@@ -1707,14 +1827,25 @@ Future<void> _allowMissing(
   if (!allowed) throw _denied(user);
 }
 
-/// The rows of [rows] that the `view` ability of the policy allows. The
-/// others are left out, with no error.
+/// [_allow] on the model type [T], when the policy of [T] lists
+/// [ability] (`viewAny`, `create`). Else nothing is checked.
+Future<void> _allowIf<T>(
+  ResolveInfo<DoxGraphQLContext> info,
+  String ability,
+) async {
+  if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);
+}
+
+/// The rows of [rows] that the `view` ability of the policy allows, when
+/// the policy of [T] lists `view`. The others are left out, with no error.
 Future<List<T>?> _viewList<T extends Object>(
   ResolveInfo<DoxGraphQLContext> info,
   Future<List<T>?> rows,
 ) async {
   List<T>? list = await rows;
-  if (list == null || list.isEmpty) return list;
+  if (list == null || list.isEmpty || !Gate.hasAbility<T>('view')) {
+    return list;
+  }
   Object? user = await info.context.user<Object>();
   return <T>[
     for (T row in list)
@@ -1722,13 +1853,14 @@ Future<List<T>?> _viewList<T extends Object>(
   ];
 }
 
-/// [row] when the `view` ability of the policy allows it, else null.
+/// [row] when the `view` ability of the policy allows it (or the policy
+/// of [T] does not list `view`), else null.
 Future<T?> _viewOne<T extends Object>(
   ResolveInfo<DoxGraphQLContext> info,
   Future<T?> row,
 ) async {
   T? value = await row;
-  if (value == null) return null;
+  if (value == null || !Gate.hasAbility<T>('view')) return value;
   Object? user = await info.context.user<Object>();
   return await Gate.allows(user, 'view', value) ? value : null;
 }

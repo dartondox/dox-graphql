@@ -43,8 +43,10 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   with `policy:`.
 - `owner: 'userId'` makes `createPost` set `userId` to the logged-in
   user. Create then needs a login.
-- The policy can also guard the reads and the create. GraphQL uses only
-  methods with these exact names:
+- The policy can also guard the reads and the create. GraphQL asks Gate
+  at run time which abilities the registered policy lists in
+  `abilities`. The keys must be `viewAny`, `view` and `create`. The
+  method names do not matter:
   - `viewAny(user)`: the list query and each relation to `Post` ask it
     first. When denied, the field is null with `FORBIDDEN`.
   - `view(user, post)`: the find query asks it on the row. The list query
@@ -52,9 +54,12 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
     single relation becomes null. Thus a list can have fewer rows than
     `limit`.
   - `create(user)`: `createPost` asks it before it saves.
-  - A denied guest gets `UNAUTHENTICATED`, a denied user `FORBIDDEN`. A
-    method with a different name is not used, also when `abilities`
-    lists it.
+  - A denied guest gets `UNAUTHENTICATED`, a denied user `FORBIDDEN`.
+  - These checks run only in the code that the builder makes (the list,
+    find and create fields, and the relations of models). Your own
+    `@GraphQLQuery`, `@ResolveField` and getters of plain classes that
+    give a model do not run `view` or `viewAny`. Call
+    `Gate.allows(user, 'view', post)` yourself there.
 - Find, update and delete check a missing id as a new, empty `Post`. A
   user that the policy denies gets the same error for an id that exists
   and an id that does not exist. If your `view`, `update` or `delete`
