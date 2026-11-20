@@ -27,7 +27,7 @@ final class ValidationContext {
           if (d is FragmentDefinitionNode) d.name.value: d,
       };
 
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final DocumentNode document;
   final List<OperationDefinitionNode> operations;
   final Map<String, FragmentDefinitionNode> fragments;
@@ -97,7 +97,7 @@ final class _DefinitionUses {
 final class DocumentValidator {
   DocumentValidator(this.schema, this.document, this.maxErrors);
 
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final DocumentNode document;
 
   /// Validation stops after this many errors.
@@ -851,7 +851,7 @@ final class _TooComplex {
 final class _OverlapChecker {
   _OverlapChecker(this.schema, this.fragments, this.report);
 
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final Map<String, FragmentDefinitionNode> fragments;
   final void Function(GraphQLError error) report;
 

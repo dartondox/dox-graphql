@@ -13,8 +13,8 @@ import 'values.dart';
 ///
 /// Subscriptions are not supported yet. A `subscription` root will be
 /// added next to [query] and [mutation].
-final class Schema<C> {
-  Schema({
+final class GraphQLSchema<C> {
+  GraphQLSchema({
     required this.query,
     this.mutation,
     List<NamedType> types = const <NamedType>[],
@@ -179,7 +179,7 @@ final class Schema<C> {
 final class _SchemaChecker {
   _SchemaChecker(this.schema, this.problems);
 
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final List<String> problems;
 
   static final RegExp _name = RegExp(r'^[_A-Za-z][_0-9A-Za-z]*$');

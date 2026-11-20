@@ -120,7 +120,7 @@ void main() {
         ),
       ],
     );
-    Schema<LoaderContext> schema = Schema<LoaderContext>(
+    GraphQLSchema<LoaderContext> schema = GraphQLSchema<LoaderContext>(
       query: ObjectType<Object?, LoaderContext>(
         'Query',
         fields: () => <Field<Object?, LoaderContext>>[

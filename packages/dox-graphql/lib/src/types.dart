@@ -344,7 +344,7 @@ final class ResolveInfo<C> {
   final List<FieldNode> fieldNodes;
   final ObjectType<Object?, Object?> parentType;
   final GraphQLType returnType;
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final OperationDefinitionNode operation;
   final Map<String, FragmentDefinitionNode> fragments;
 

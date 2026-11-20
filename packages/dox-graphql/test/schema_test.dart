@@ -22,7 +22,7 @@ List<String> problemsOf(
   List<NamedType> types = const <NamedType>[],
 }) {
   try {
-    Schema<Object?>(query: query, types: types);
+    GraphQLSchema<Object?>(query: query, types: types);
     return <String>[];
   } on SchemaError catch (e) {
     return e.problems;
@@ -261,7 +261,7 @@ void main() {
       'Hidden',
       <Field<Object?, Object?>>[_f('x', graphqlInt)],
     );
-    Schema<Object?> s = Schema<Object?>(
+    GraphQLSchema<Object?> s = GraphQLSchema<Object?>(
       query: _object('Query', <Field<Object?, Object?>>[_f('a', graphqlInt)]),
       types: <NamedType>[hidden],
     );
