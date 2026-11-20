@@ -4,6 +4,10 @@
 
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_graphql_test_app/app/dtos/create_book.dart';
+import 'package:dox_graphql_test_app/app/dtos/create_post.dart';
 
 /// Every DTO of the app. Use it in `AppConfig(dtos: dtos)`.
-const List<DtoSchema<Object>> dtos = <DtoSchema<Object>>[$CreateBookDto];
+const List<DtoSchema<Object>> dtos = <DtoSchema<Object>>[
+  $CreateBookDto,
+  $CreatePostDtoDto,
+];

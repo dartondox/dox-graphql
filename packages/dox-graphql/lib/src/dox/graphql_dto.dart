@@ -18,6 +18,11 @@ class GraphQLDto {
   /// so the errors have the names the client sent. [params] are given to
   /// rules like `@Unique(ignoreParam: 'id')`.
   ///
+  /// With [only], the errors of other keys are left out: an update sends
+  /// the stored values for the keys the client did not send. When only
+  /// such errors are left, all errors are sent: the stored row itself is
+  /// not valid.
+  ///
   /// A failed check throws one [GraphQLError] "Validation failed" with
   /// `extensions: {code: VALIDATION_FAILED, fields: {name: message}}`.
   static Future<T> validate<T>(
@@ -26,6 +31,7 @@ class GraphQLDto {
     DoxGraphQLContext context, {
     Map<String, String> names = const <String, String>{},
     Map<String, String> params = const <String, String>{},
+    Set<String>? only,
   }) async {
     DtoState state = DtoState(
       root: input,
@@ -35,7 +41,15 @@ class GraphQLDto {
     );
     ParseResult<T> result = await schema.run(input, state);
     if (result.success) return result.value as T;
-    throw failed(result.issues, names);
+    List<ValidationIssue> issues = result.issues;
+    if (only != null) {
+      List<ValidationIssue> sent = <ValidationIssue>[
+        for (ValidationIssue issue in issues)
+          if (issue.path.isNotEmpty && only.contains(issue.path.first)) issue,
+      ];
+      if (sent.isNotEmpty) issues = sent;
+    }
+    throw failed(issues, names);
   }
 
   /// The "Validation failed" error for [issues]. The first key of each

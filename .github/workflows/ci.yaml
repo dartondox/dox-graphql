@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [dox-graphql, dox-graphql-builder, test-app]
+        package: [dox-graphql, dox-graphql-builder, dox-graphql-orm, test-app]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +56,9 @@ jobs:
         run: |
           dart run build_runner build --delete-conflicting-outputs
           git diff --exit-code -- . || { echo "::error::run dart run build_runner build in packages/test-app"; exit 1; }
+      # dox-graphql-orm is tested end to end in test-app
       - name: Dart tests
+        if: hashFiles(format('packages/{0}/test/**', matrix.package)) != ''
         working-directory: packages/${{ matrix.package }}
         run: dart test --concurrency=4
       # 65 = warnings only (like a CHANGELOG with only "Unreleased"): shown

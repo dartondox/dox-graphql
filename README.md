@@ -6,6 +6,7 @@ GraphQL for the Dox framework.
 | --- | --- |
 | [dox_graphql](packages/dox-graphql) | The GraphQL engine: schema, validation, execution, introspection, DataLoader. The annotations and the Dox provider. |
 | [dox_graphql_builder](packages/dox-graphql-builder) | The `build_runner` builder: it makes `graphqlSchema` from the annotations. |
+| [dox_graphql_orm](packages/dox-graphql-orm) | The dox_orm part: list and find queries, relations in batches, and writes for models. |
 
 `packages/test-app` is a small Dox app that runs the generated code end to
 end. It is not published.

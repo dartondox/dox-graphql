@@ -57,7 +57,17 @@ class SchemaReader {
 
   final Map<ClassElement, ObjectSpec> objects = <ClassElement, ObjectSpec>{};
   final Map<EnumElement, EnumSpec> enums = <EnumElement, EnumSpec>{};
-  final Map<ClassElement, InputSpec> inputs = <ClassElement, InputSpec>{};
+
+  /// By GraphQL name: one `@Dto` can give more than one input type, like
+  /// `CreatePostInput` and `UpdatePostInput`.
+  final Map<String, InputSpec> inputs = <String, InputSpec>{};
+
+  /// Functions the root fields of models call, as code.
+  final List<String> functions = <String>[];
+
+  /// True when a model is in the schema: the code imports
+  /// dox_graphql_orm.
+  bool get hasModels => objects.values.any((ObjectSpec o) => o.orm);
   final List<FieldSpec> query = <FieldSpec>[];
   final List<FieldSpec> mutation = <FieldSpec>[];
 
@@ -129,15 +139,13 @@ class SchemaReader {
     if (element.typeParameters.isNotEmpty) {
       _fail(where, 'a @GraphQLType class can not be generic.', element);
     }
-    if (annotation(element, 'DoxModel', package: 'dox_annotation') != null) {
-      _fail(
-        where,
-        '@GraphQLType() on a @DoxModel is not supported yet. Write a '
-        'plain class, or a resolver.',
-        element,
-      );
-    }
-    if (type.getField('dto')?.toTypeValue() != null) {
+    DartObject? model = annotation(
+      element,
+      'DoxModel',
+      package: 'dox_annotation',
+    );
+    DartType? dto = type.getField('dto')?.toTypeValue();
+    if (model == null && dto != null) {
       _fail(
         where,
         '`dto:` works only on a model of dox_orm. A plain class has no '
@@ -146,22 +154,49 @@ class SchemaReader {
       );
     }
     imports.prefix(element.library);
-    objects[element] = ObjectSpec(
+    ObjectSpec spec = objects[element] = ObjectSpec(
       element,
       name,
       element.library.uri.toString(),
       description: _string(type, 'description') ?? docOf(element),
     );
+    if (model == null) return;
+    spec.orm = true;
+    spec.queries = type.getField('queries')?.toBoolValue() ?? true;
+    if (dto != null) {
+      Element? dtoElement = dto is InterfaceType ? dto.element : null;
+      if (dtoElement is! ClassElement || !_dtos.isDto(dtoElement)) {
+        _fail(
+          where,
+          '`dto:` must be a class with @Dto(), not '
+          '${dto.getDisplayString()}.',
+          element,
+        );
+      }
+      spec.dto = dtoElement;
+    }
+    spec.primaryKey = model.getField('primaryKey')?.toStringValue() ?? 'id';
+    DartType? key = model.getField('primaryKeyType')?.toTypeValue();
+    spec.keyType = key is InterfaceType ? key.element.displayName : 'int';
   }
 
-  /// Step 2: the fields of each registered class.
+  /// Step 2: the fields of each registered class, and the list, find and
+  /// write fields of the models.
   void readTypes() {
     for (ObjectSpec spec in objects.values) {
-      _readPlainFields(spec);
+      if (spec.orm) {
+        _readModelFields(spec);
+      } else {
+        _readPlainFields(spec);
+      }
+      _readGetters(spec);
+    }
+    for (ObjectSpec spec in objects.values) {
+      if (spec.orm) _addModelRoots(spec);
     }
   }
 
-  /// The public fields, and the getters with `@GraphQLField()`.
+  /// The public fields of a plain class.
   void _readPlainFields(ObjectSpec spec) {
     ClassElement element = spec.element;
     Set<String> seen = <String>{};
@@ -194,6 +229,294 @@ class SchemaReader {
         _addMember(spec, getter, getter.displayName, getter.returnType, getter);
       }
     }
+  }
+
+  /// The relation annotations of dox_orm.
+  static const List<String> _relations = <String>[
+    'HasOne',
+    'HasMany',
+    'BelongsTo',
+    'ManyToMany',
+    'HasManyThrough',
+    'HasOneThrough',
+    'MorphMany',
+    'MorphOne',
+    'MorphTo',
+  ];
+
+  static bool _isRelation(FieldElement field) {
+    for (String name in _relations) {
+      if (annotation(field, name, package: 'dox_orm') != null) return true;
+    }
+    return false;
+  }
+
+  /// The key, the `@Column` fields and the relations of a model. A field
+  /// is left out at run time when its column is in `hidden`.
+  void _readModelFields(ObjectSpec spec) {
+    ClassElement element = spec.element;
+    String key = camelCase(spec.primaryKey);
+    _addField(
+      spec.fields,
+      FieldSpec(
+        name: key,
+        type: 'graphqlId.nonNull',
+        resolve: 's.$key',
+        where: '${element.displayName}.$key',
+        column: spec.primaryKey,
+      ),
+      spec.name,
+      element,
+    );
+    String model = '${imports.prefix(element.library)}.${element.displayName}';
+    for (FieldElement field in element.fields) {
+      if (field.isStatic || !field.isOriginDeclaration) continue;
+      if (annotation(field, 'GraphQLIgnore') != null) continue;
+      DartObject? column = annotation(field, 'Column', package: 'dox_orm');
+      bool relation = _isRelation(field);
+      if (column == null && !relation) continue;
+      String dartName = field.displayName;
+      if (field.isPrivate) continue;
+      if (column != null) {
+        String columnName =
+            column.getField('name')?.toStringValue() ?? snakeCase(dartName);
+        _addMember(
+          spec,
+          field,
+          dartName,
+          field.type,
+          field,
+          column: columnName,
+        );
+        continue;
+      }
+      _addMember(
+        spec,
+        field,
+        dartName,
+        field.type,
+        field,
+        resolve:
+            'GraphQLOrm.relation<$model, ${imports.code(field.type)}>(s, '
+            "'$dartName', info.context, ($model p) => p.$dartName)",
+      );
+    }
+  }
+
+  /// The list and find queries, and with `dto:` the create, update and
+  /// delete mutations of a model. They are `AutoField`s, so
+  /// `GraphQLConfig(autoResolvers: false)` can leave them out.
+  void _addModelRoots(ObjectSpec spec) {
+    ClassElement element = spec.element;
+    String model = '${imports.prefix(element.library)}.${element.displayName}';
+    String name = spec.name;
+    String id = spec.keyType == 'int'
+        ? "int.tryParse(info.args.get<String>('id')!)"
+        : "info.args.get<String>('id')!";
+    ArgSpec idArg = ArgSpec('id', 'graphqlId.nonNull');
+    String auto = '$name (made for the model)';
+    if (spec.queries) {
+      String hint = '$auto. Turn it off with @GraphQLType(queries: false)';
+      _addField(
+        query,
+        FieldSpec(
+          name: lcFirst(plural(name)),
+          type: '${spec.variable}.nonNull.list.nonNull',
+          args: <ArgSpec>[
+            ArgSpec('limit', 'graphqlInt', defaultValue: '20'),
+            ArgSpec('offset', 'graphqlInt', defaultValue: '0'),
+          ],
+          resolve: 'GraphQLOrm.list<$model>($model(), info)',
+          where: hint,
+          auto: true,
+        ),
+        'Query',
+        element,
+      );
+      _addField(
+        query,
+        FieldSpec(
+          name: lcFirst(name),
+          type: spec.variable,
+          args: <ArgSpec>[idArg],
+          resolve: 'GraphQLOrm.find<$model>($model(), $id)',
+          where: hint,
+          auto: true,
+        ),
+        'Query',
+        element,
+      );
+    }
+    ClassElement? dtoElement = spec.dto;
+    if (dtoElement == null) return;
+    InputSpec create = inputOf(dtoElement, name: 'Create${name}Input')
+      ..validated = true;
+    InputSpec update = inputOf(dtoElement, name: 'Update${name}Input');
+    String dtoPrefix = imports.prefix(dtoElement.library);
+    String dto = '$dtoPrefix.${dtoElement.displayName}';
+    String schema = '$dtoPrefix.\$${dtoElement.displayName}Dto';
+
+    List<String> sets = <String>[];
+    List<String> updates = <String>[];
+    List<String> current = <String>[];
+    List<String> names = <String>[];
+    for (DtoField field in _dtos.read(dtoElement).fields) {
+      String where = '${dtoElement.displayName}.${field.name}';
+      if (field.maybe) {
+        _fail(
+          where,
+          'a Maybe field can not be in the `dto:` of a model. The update '
+          'mutation already sets only the fields the client sends.',
+          field.element,
+        );
+      }
+      FieldElement? column = _columnNamed(element, field.name);
+      if (column == null) {
+        _fail(
+          where,
+          '${element.displayName} has no @Column() field "${field.name}". '
+          'The `dto:` of a model can set only its columns.',
+          field.element,
+        );
+      }
+      if (!element.library.typeSystem.isAssignableTo(
+        field.element.type,
+        column.type,
+      )) {
+        _fail(
+          where,
+          'the type ${field.element.type.getDisplayString()} can not be set '
+          'on ${element.displayName}.${field.name} '
+          '(${column.type.getDisplayString()}).',
+          field.element,
+        );
+      }
+      String value = switch (field.type.kind) {
+        DtoKind.date => 'model.${field.name}?.toIso8601String()',
+        DtoKind.enumName => 'model.${field.name}?.name',
+        DtoKind.string ||
+        DtoKind.integer ||
+        DtoKind.decimal ||
+        DtoKind.number ||
+        DtoKind.boolean => 'model.${field.name}',
+        _ => _fail(
+          where,
+          'the `dto:` of a model can set only text, number, bool, '
+          'DateTime and enum columns.',
+          field.element,
+        ),
+      };
+      sets.add('..${field.name} = dto.${field.name}');
+      updates.add(
+        "if (input.has('${field.name}')) "
+        'model.${field.name} = dto.${field.name};',
+      );
+      current.add("'${field.key}': $value,");
+      if (field.key != field.name) {
+        names.add("'${field.key}': '${field.name}',");
+      }
+    }
+    String key = camelCase(spec.primaryKey);
+    functions
+      ..add('''
+/// Makes a $name from the input of `create$name`.
+Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $dto dto = await ${create.validate}(info.args.input('input')!, info.context);
+  $model model = $model()${sets.join()};
+  await model.save();
+  return model;
+}
+''')
+      ..add('''
+/// Sets the fields the client sent on a $name. Null when there is no
+/// $name with that id.
+Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await GraphQLOrm.find<$model>($model(), $id);
+  if (model == null) return null;
+  InputValues input = info.args.input('input')!;
+  Map<String, Object?> given = ${update.toMap}(input);
+  // the other fields keep their values, so the DTO gets a whole input
+  $dto dto = await GraphQLDto.validate<$dto>(
+    $schema,
+    <String, Object?>{${current.join()} ...given},
+    info.context,
+    names: const <String, String>{${names.join()}},
+    params: <String, String>{'id': '\${model.$key}'},
+    only: given.keys.toSet(),
+  );
+  ${updates.join('\n  ')}
+  await model.save();
+  return model;
+}
+''');
+    String hint = '$auto from `dto:`';
+    _addField(
+      mutation,
+      FieldSpec(
+        name: 'create$name',
+        type: '${spec.variable}.nonNull',
+        args: <ArgSpec>[ArgSpec('input', '${create.variable}.nonNull')],
+        resolve: '_create$name(info)',
+        where: hint,
+        auto: true,
+      ),
+      'Mutation',
+      element,
+    );
+    _addField(
+      mutation,
+      FieldSpec(
+        name: 'update$name',
+        type: spec.variable,
+        args: <ArgSpec>[idArg, ArgSpec('input', '${update.variable}.nonNull')],
+        resolve: '_update$name(info)',
+        where: hint,
+        auto: true,
+      ),
+      'Mutation',
+      element,
+    );
+    _addField(
+      mutation,
+      FieldSpec(
+        name: 'delete$name',
+        type: 'graphqlBoolean.nonNull',
+        args: <ArgSpec>[idArg],
+        resolve: 'GraphQLOrm.delete<$model>($model(), $id)',
+        where: hint,
+        auto: true,
+      ),
+      'Mutation',
+      element,
+    );
+  }
+
+  static FieldElement? _columnNamed(ClassElement model, String name) {
+    for (FieldElement field in model.fields) {
+      if (field.displayName == name &&
+          !field.isStatic &&
+          annotation(field, 'Column', package: 'dox_orm') != null) {
+        return field;
+      }
+    }
+    return null;
+  }
+
+  /// The getters with `@GraphQLField()` of a model, and a check that no
+  /// method has it. A plain class reads its getters with its fields.
+  void _readGetters(ObjectSpec spec) {
+    ClassElement element = spec.element;
+    for (GetterElement getter
+        in spec.orm ? element.getters : const <GetterElement>[]) {
+      if (!getter.isOriginDeclaration) continue;
+      DartObject? field = annotation(getter, 'GraphQLField');
+      if (field == null) continue;
+      String where = '${element.displayName}.${getter.displayName}';
+      if (getter.isStatic || getter.isPrivate) {
+        _fail(where, '@GraphQLField() needs a public instance getter.', getter);
+      }
+      _addMember(spec, getter, getter.displayName, getter.returnType, getter);
+    }
     for (MethodElement method in element.methods) {
       if (annotation(method, 'GraphQLField') == null) continue;
       _fail(
@@ -210,8 +533,10 @@ class SchemaReader {
     Element member,
     String dartName,
     DartType type,
-    Element annotated,
-  ) {
+    Element annotated, {
+    String? resolve,
+    String? column,
+  }) {
     String where = '${spec.element.displayName}.$dartName';
     DartObject? field = annotation(annotated, 'GraphQLField');
     String name = _string(field, 'name') ?? dartName;
@@ -222,10 +547,11 @@ class SchemaReader {
       FieldSpec(
         name: name,
         type: gql,
-        resolve: 's.$dartName',
+        resolve: resolve ?? 's.$dartName',
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
+        column: column,
       ),
       spec.name,
       member,
@@ -401,7 +727,7 @@ class SchemaReader {
     if (type is InterfaceType) {
       InterfaceElement element = type.element;
       if (element is ClassElement && _dtos.isDto(element)) {
-        InputSpec input = inputs[element]!;
+        InputSpec input = inputOf(element)..validated = true;
         String call =
             'await ${input.validate}(info.args.input($quoted)!, info.context)';
         if (nullable) {
@@ -538,17 +864,21 @@ class SchemaReader {
   }
 
   /// The input type of the `@Dto` class [element], made on first use.
-  InputSpec inputOf(ClassElement element) {
-    InputSpec? spec = inputs[element];
-    if (spec != null) return spec;
-    String base = element.displayName;
-    if (base.endsWith('Dto') && base.length > 3) {
-      base = base.substring(0, base.length - 3);
+  /// [name] is the type name. Default: the class name without `Dto`, and
+  /// `Input`.
+  InputSpec inputOf(ClassElement element, {String? name}) {
+    if (name == null) {
+      String base = element.displayName;
+      if (base.endsWith('Dto') && base.length > 3) {
+        base = base.substring(0, base.length - 3);
+      }
+      name = '${base}Input';
     }
-    String name = '${base}Input';
+    InputSpec? spec = inputs[name];
+    if (spec != null && spec.element == element) return spec;
     _claimTypeName(name, element.displayName, element);
     imports.prefix(element.library);
-    spec = inputs[element] = InputSpec(
+    spec = inputs[name] = InputSpec(
       element,
       name,
       element.library.uri.toString(),
@@ -709,4 +1039,41 @@ class SchemaReader {
   static Never _fail(String where, String message, Element element) {
     throw InvalidGenerationSourceError('$where: $message', element: element);
   }
+}
+
+/// `user_id` -> `userId`.
+String camelCase(String text) {
+  List<String> words = text.split('_');
+  StringBuffer out = StringBuffer(words.first);
+  for (String word in words.skip(1)) {
+    if (word.isEmpty) continue;
+    out.write(word[0].toUpperCase() + word.substring(1));
+  }
+  return out.toString();
+}
+
+/// `userId` -> `user_id`, the column name of a field.
+String snakeCase(String text) {
+  StringBuffer out = StringBuffer();
+  for (int i = 0; i < text.length; i++) {
+    String char = text[i];
+    if (i > 0 && char != char.toLowerCase()) out.write('_');
+    out.write(char.toLowerCase());
+  }
+  return out.toString().replaceAll(RegExp('_+'), '_');
+}
+
+/// `Post` -> `post`.
+String lcFirst(String text) => text[0].toLowerCase() + text.substring(1);
+
+/// The English plural of a name: `Post` -> `Posts`, `Category` ->
+/// `Categories`, `Box` -> `Boxes`.
+String plural(String name) {
+  // ponytail: simple rules, no list of odd words (Person, Child). A model
+  // with an odd plural turns its queries off and writes a resolver.
+  if (RegExp(r'[^aeiou]y$').hasMatch(name)) {
+    return '${name.substring(0, name.length - 1)}ies';
+  }
+  if (RegExp(r'(s|x|z|ch|sh)$').hasMatch(name)) return '${name}es';
+  return '${name}s';
 }

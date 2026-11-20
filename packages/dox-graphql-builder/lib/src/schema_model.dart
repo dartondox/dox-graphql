@@ -70,6 +70,19 @@ class ObjectSpec {
 
   /// True for a model of dox_orm.
   bool orm = false;
+
+  /// Models: the list and find queries.
+  bool queries = true;
+
+  /// Models: the `@Dto` class of `dto:`, for the create, update and
+  /// delete mutations.
+  ClassElement? dto;
+
+  /// Models: the primary key column, like `id`.
+  String primaryKey = 'id';
+
+  /// Models: the Dart type of the primary key, `int` or `String`.
+  String keyType = 'int';
   final List<FieldSpec> fields = <FieldSpec>[];
 
   /// The name of the variable in the generated code.
@@ -120,6 +133,9 @@ class InputSpec {
 
   /// The function that turns the input into a map with the DTO keys.
   String get toMap => '_m$name';
+
+  /// True when a resolver calls [validate], so the function is written.
+  bool validated = false;
 
   /// The function that checks the input with the DTO rules.
   String get validate => '_v$name';
