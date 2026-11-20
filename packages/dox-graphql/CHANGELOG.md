@@ -1,5 +1,14 @@
 ## Unreleased
 
+- New: `maxRootFields` in `GraphQLConfig` and `GraphQLExecutor`, 50 by
+  default. It is the maximum number of top-level fields in one
+  operation, after fragments are expanded. Each alias counts. A query
+  with more fields gets an error, and no resolver runs.
+- `GraphQLAuth.unauthenticatedError()` gives the `UNAUTHENTICATED` error.
+- `dox add graphql` writes a commented
+  `// middleware: <Object>[AuthMiddleware()],` line in
+  `lib/config/graphql.dart`. Without an auth middleware, the API is
+  public.
 - New: `owner:` on `@GraphQLType`, like `owner: 'userId'`. The create
   mutation sets that column to the id of the logged-in user, so a client
   can not send or change it. Create then always needs a login, even with

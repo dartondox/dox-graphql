@@ -26,6 +26,7 @@ class GraphQLConfig {
     this.maxQueryLength = GraphQLExecutor.defaultMaxQueryLength,
     this.maxFields = GraphQLExecutor.defaultMaxFields,
     this.maxNodes = GraphQLExecutor.defaultMaxNodes,
+    this.maxRootFields = GraphQLExecutor.defaultMaxRootFields,
     this.maxErrors = GraphQLExecutor.defaultMaxErrors,
   });
 
@@ -81,6 +82,9 @@ class GraphQLConfig {
 
   /// See `GraphQLExecutor.maxNodes`.
   final int maxNodes;
+
+  /// See `GraphQLExecutor.maxRootFields`.
+  final int maxRootFields;
 
   /// See `GraphQLExecutor.maxErrors`.
   final int maxErrors;

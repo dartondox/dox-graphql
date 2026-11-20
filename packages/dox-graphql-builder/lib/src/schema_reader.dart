@@ -206,7 +206,8 @@ class SchemaReader {
           element,
         );
       }
-      if (!_isPolicyOf(policy, element)) {
+      InterfaceType? base = _policyOf(policy, element);
+      if (base == null) {
         _fail(
           where,
           '`policy:` must be a Policy of dox_auth for ${element.displayName}, '
@@ -217,6 +218,10 @@ class SchemaReader {
         );
       }
       spec.policy = true;
+      spec.abilities = _readAbilities(policy as InterfaceType);
+      spec.guestsDenied =
+          base.typeArguments.first.nullabilitySuffix !=
+          NullabilitySuffix.question;
       hasPolicies = true;
     }
     if (owner != null) {
@@ -364,13 +369,56 @@ class SchemaReader {
         dartName,
         field.type,
         field,
-        resolve:
-            'GraphQLOrm.relation<$model, ${imports.code(field.type)}>(s, '
-            "'$dartName', info.context, ($model p) => p.$dartName)",
+        resolve: _relation(field, model),
         // the name toJson() gives a relation, so `hidden` can name it
         column: snakeCase(dartName),
       );
     }
+  }
+
+  /// The relations that give a list. They load with a row cap.
+  static const List<String> _manyRelations = <String>[
+    'HasMany',
+    'ManyToMany',
+    'HasManyThrough',
+    'MorphMany',
+  ];
+
+  /// The resolver code of relation [field] of the model [model] (as code).
+  /// A list relation loads with `GraphQLOrm.many`, so one request can not
+  /// read a huge table. A relation to a model whose policy has `viewAny`
+  /// asks it first.
+  String _relation(FieldElement field, String model) {
+    String name = field.displayName;
+    DartType type = field.type;
+    bool many =
+        type is InterfaceType &&
+        type.isDartCoreList &&
+        _manyRelations.any(
+          (String a) => annotation(field, a, package: 'dox_orm') != null,
+        );
+    String code;
+    DartType related = type;
+    if (many) {
+      related = type.typeArguments.first;
+      bool pivot = annotation(field, 'ManyToMany', package: 'dox_orm') != null;
+      code =
+          'GraphQLOrm.many<$model, ${imports.nonNullCode(related)}>(s, '
+          "'$name', info.context, ($model p) => p.$name"
+          '${pivot ? ', pivot: true' : ''})';
+    } else {
+      if (type is InterfaceType && type.isDartCoreList) {
+        related = type.typeArguments.first;
+      }
+      code =
+          'GraphQLOrm.relation<$model, ${imports.code(type)}>(s, '
+          "'$name', info.context, ($model p) => p.$name)";
+    }
+    Element? element = related is InterfaceType ? related.element : null;
+    ObjectSpec? target = objects[element];
+    if (target == null || !target.abilities.contains('viewAny')) return code;
+    String relatedModel = imports.nonNullCode(related);
+    return "_allow(info, 'viewAny', $relatedModel).then((_) => $code)";
   }
 
   /// The list and find queries, and with `dto:` the create, update and
@@ -385,6 +433,28 @@ class SchemaReader {
         : "info.args.get<String>('id')!";
     ArgSpec idArg = ArgSpec('id', 'graphqlId.nonNull');
     String auto = '$name (made for the model)';
+    // a policy that denies every guest: stop a guest before the lookup
+    String guest = spec.guestsDenied ? '\n  await _login(info);' : '';
+    String list = 'GraphQLOrm.list<$model>($model(), info)';
+    String find = 'GraphQLOrm.find<$model>($model(), $id)';
+    if (spec.queries && spec.abilities.contains('viewAny')) {
+      list = "_allow(info, 'viewAny', $model).then((_) => $list)";
+    }
+    if (spec.queries && spec.abilities.contains('view')) {
+      functions.add('''
+/// The $name with the id, after the `view` check of the policy. A missing
+/// id is checked as a blank $name, so a user the policy denies gets the
+/// same error for an id that exists and one that does not.
+Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
+  $model? model = await $find;
+  await (model == null
+      ? _allowMissing(info, 'view', $model())
+      : _allow(info, 'view', model));
+  return model;
+}
+''');
+      find = '_find$name(info)';
+    }
     if (spec.queries) {
       String hint = '$auto. Turn it off with @GraphQLType(queries: false)';
       _addField(
@@ -396,7 +466,7 @@ class SchemaReader {
             ArgSpec('limit', 'graphqlInt', defaultValue: '20'),
             ArgSpec('offset', 'graphqlInt', defaultValue: '0'),
           ],
-          resolve: 'GraphQLOrm.list<$model>($model(), info)',
+          resolve: list,
           where: hint,
           auto: true,
           auth: spec.auth,
@@ -410,7 +480,7 @@ class SchemaReader {
           name: lcFirst(name),
           type: spec.variable,
           args: <ArgSpec>[idArg],
-          resolve: 'GraphQLOrm.find<$model>($model(), $id)',
+          resolve: find,
           where: hint,
           auto: true,
           auth: spec.auth,
@@ -519,9 +589,12 @@ class SchemaReader {
         ? ''
         : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
               "info.context, '${element.displayName}.$owner');";
+    String allowCreate = spec.abilities.contains('create')
+        ? "\n  await _allow(info, 'create', $model);"
+        : '';
     functions.add('''
 /// Makes a $name from the input of `create$name`.
-Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
+Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allowCreate
   $dto dto = await ${create.validate}(info.args.input('input')!, info.context);
   $model model = $model()${sets.join()};$ownerSet
   await model.save();
@@ -550,10 +623,13 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {
     functions
       ..add('''
 /// Sets the fields the client sent on a $name. Null when there is no
-/// $name with that id.
-Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
+/// $name with that id and the policy allows the update of a blank one.
+Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
   $model? model = await GraphQLOrm.find<$model>($model(), $id);
-  if (model == null) return null;
+  if (model == null) {
+    await _allowMissing(info, 'update', $model());
+    return null;
+  }
   await _allow(info, 'update', model);
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = ${update.toMap}(input);
@@ -573,10 +649,14 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
 }
 ''')
       ..add('''
-/// Deletes a $name. False when there is no $name with that id.
-Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
+/// Deletes a $name. False when there is no $name with that id and the
+/// policy allows the delete of a blank one.
+Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
   $model? model = await GraphQLOrm.find<$model>($model(), $id);
-  if (model == null) return false;
+  if (model == null) {
+    await _allowMissing(info, 'delete', $model());
+    return false;
+  }
   await _allow(info, 'delete', model);
   await model.delete();
   return true;
@@ -612,10 +692,10 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
     );
   }
 
-  /// True when [policy] is a `Policy<U, M>` of dox_auth with [model] as
-  /// `M`.
-  static bool _isPolicyOf(DartType policy, ClassElement model) {
-    if (policy is! InterfaceType) return false;
+  /// The `Policy<U, M>` of dox_auth that [policy] extends, when [model]
+  /// is its `M`. Else null.
+  static InterfaceType? _policyOf(DartType policy, ClassElement model) {
+    if (policy is! InterfaceType) return null;
     for (InterfaceType t in policy.allSupertypes) {
       if (t.element.name != 'Policy' ||
           !t.element.library.uri.toString().startsWith('package:dox_auth/') ||
@@ -623,9 +703,24 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
         continue;
       }
       DartType m = t.typeArguments[1];
-      return m is InterfaceType && m.element == model;
+      return m is InterfaceType && m.element == model ? t : null;
     }
-    return false;
+    return null;
+  }
+
+  /// The read and create abilities [policy] has a method for. Gate denies
+  /// an ability that a policy does not list, so a check runs only for a
+  /// method the policy has. A method that is not in `abilities` denies.
+  static Set<String> _readAbilities(InterfaceType policy) {
+    // ponytail: the method name is the ability name, like the dox_auth
+    // docs. An ability listed under another method name is not seen.
+    return <String>{
+      for (InterfaceType t in <InterfaceType>[policy, ...policy.allSupertypes])
+        for (MethodElement m in t.element.methods)
+          if (const <String>['viewAny', 'view', 'create'].contains(m.name) &&
+              !m.isStatic)
+            m.name!,
+    };
   }
 
   static EnumElement _enumOf(DtoType type) {

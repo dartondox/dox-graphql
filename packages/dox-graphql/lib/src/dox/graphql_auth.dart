@@ -33,7 +33,7 @@ class GraphQLAuth implements FieldGuard {
   /// The error code of a field that needs a login.
   static const String unauthenticated = 'UNAUTHENTICATED';
 
-  /// The error code of a write that a policy denies.
+  /// The error code of a read or write that a policy denies.
   static const String forbiddenCode = 'FORBIDDEN';
 
   final GraphQLSchema<DoxGraphQLContext> _schema;
@@ -41,12 +41,16 @@ class GraphQLAuth implements FieldGuard {
   /// True when fields need a login by default.
   final bool loginByDefault;
 
-  /// The error of a write that a policy denies: "Forbidden" with
+  /// The error of a read or write that a policy denies: "Forbidden" with
   /// `extensions: {code: FORBIDDEN}`.
   static GraphQLError forbidden() => GraphQLError(
     'Forbidden',
     extensions: <String, Object?>{'code': forbiddenCode},
   );
+
+  /// The error of a field that needs a login: "Unauthenticated" with
+  /// `extensions: {code: UNAUTHENTICATED}`.
+  static GraphQLError unauthenticatedError() => _error();
 
   /// The [IAuthMiddleware]s of [middleware], in their optional form.
   static List<IAuthMiddleware> logins(List<Object> middleware) {

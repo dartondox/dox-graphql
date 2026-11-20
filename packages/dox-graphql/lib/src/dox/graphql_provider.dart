@@ -53,6 +53,7 @@ class GraphQLProvider extends DoxProvider {
           maxQueryLength: config.maxQueryLength,
           maxFields: config.maxFields,
           maxNodes: config.maxNodes,
+          maxRootFields: config.maxRootFields,
           maxErrors: config.maxErrors,
           guard: guard,
         );

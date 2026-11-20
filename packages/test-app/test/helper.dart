@@ -5,9 +5,11 @@ import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_test_app/generated/container.g.dart';
 import 'package:dox_graphql_test_app/generated/dtos.g.dart';
 import 'package:dox_graphql_test_app/app/models/article/article.model.dart';
+import 'package:dox_graphql_test_app/app/models/doc/doc.model.dart';
 import 'package:dox_graphql_test_app/app/models/member/member.model.dart';
 import 'package:dox_graphql_test_app/app/models/note/note.model.dart';
 import 'package:dox_graphql_test_app/app/models/post/post.model.dart';
+import 'package:dox_graphql_test_app/app/policies/doc_policy.dart';
 import 'package:dox_graphql_test_app/app/policies/note_policy.dart';
 import 'package:dox_graphql_test_app/app/policies/policies.dart';
 
@@ -73,6 +75,7 @@ Future<DoxTestClient> startApp(GraphQLConfig config) {
   Gate.policy<Member>(MemberPolicy());
   Gate.policy<Article>(ArticlePolicy());
   Gate.policy<Note>(NotePolicy());
+  Gate.policy<Doc>(DocPolicy());
   return DoxTestClient.start(
     AppConfig(
       appKey: 'graphql-test-key-0123456789abcd!',

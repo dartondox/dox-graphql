@@ -13,19 +13,48 @@ class SchemaWriter {
   static const String _context = 'DoxGraphQLContext';
   static const String _info = 'ResolveInfo<$_context> info';
 
-  /// The policy check of the update and delete mutations.
+  /// The policy checks of the models with `policy:`.
   static const String _allow =
       '''
-/// Asks the policy of [model] (registered with `Gate.policy`) if the user
-/// may do [ability]. Throws "Forbidden" when not.
+/// Asks the policy (registered with `Gate.policy`) if the user may do
+/// [ability] on [subject]: a row, or the model type. Throws when not:
+/// "Unauthenticated" for a guest, else "Forbidden".
 Future<void> _allow(
   ResolveInfo<$_context> info,
   String ability,
-  Object model,
+  Object subject,
 ) async {
   Object? user = await info.context.user<Object>();
-  if (!await Gate.allows(user, ability, model)) throw GraphQLAuth.forbidden();
+  if (!await Gate.allows(user, ability, subject)) throw _denied(user);
 }
+
+/// [_allow] for an id with no row: [blank] is a new, empty row. A user
+/// the policy denies gets the same error as for a row that exists, so the
+/// answer does not show which ids exist. A policy that throws on the
+/// blank row denies.
+Future<void> _allowMissing(
+  ResolveInfo<$_context> info,
+  String ability,
+  Object blank,
+) async {
+  Object? user = await info.context.user<Object>();
+  bool allowed;
+  try {
+    allowed = await Gate.allows(user, ability, blank);
+  } catch (_) {
+    allowed = false;
+  }
+  if (!allowed) throw _denied(user);
+}
+
+/// "Unauthenticated" before the row lookup, when the policy denies every
+/// guest.
+Future<void> _login(ResolveInfo<$_context> info) async {
+  if (await info.context.auth() == null) throw GraphQLAuth.unauthenticatedError();
+}
+
+GraphQLError _denied(Object? user) =>
+    user == null ? GraphQLAuth.unauthenticatedError() : GraphQLAuth.forbidden();
 ''';
 
   String write() {

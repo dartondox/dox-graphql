@@ -93,6 +93,17 @@ Future<void> setUpDatabase() async {
     table.integer('user_id');
     table.timestamps();
   });
+  await Schema().create('docs', (Table table) {
+    table.id();
+    table.string('title');
+    table.string('owner').nullable();
+    table.integer('account_id').nullable();
+    table.timestamps();
+  });
+  await QueryBuilder.table('docs').insertMany(<Map<String, dynamic>>[
+    <String, dynamic>{'title': 'Ann doc', 'owner': 'ann', 'account_id': 1},
+    <String, dynamic>{'title': 'Bob doc', 'owner': 'bob', 'account_id': 1},
+  ]);
   await QueryBuilder.table('profiles').insertMany(<Map<String, dynamic>>[
     <String, dynamic>{'bio': 'Ada bio', 'user_id': 1},
     <String, dynamic>{'bio': 'Member bio', 'member_id': 1},

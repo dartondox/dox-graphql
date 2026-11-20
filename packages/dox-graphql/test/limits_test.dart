@@ -249,6 +249,51 @@ void main() {
       );
     });
 
+    test('51 root aliases are stopped before any resolver runs', () async {
+      int runs = 0;
+      GraphQLExecutor<Object?> counted = GraphQLExecutor<Object?>(
+        GraphQLSchema<Object?>(
+          query: ObjectType<Object?, Object?>(
+            'Query',
+            fields: () => <Field<Object?, Object?>>[
+              Field<Object?, Object?>(
+                'b',
+                graphqlInt,
+                resolve: (Object? _, ResolveInfo<Object?> i) => ++runs,
+              ),
+            ],
+          ),
+        ),
+      );
+      String aliases(int n) =>
+          '{ ${<String>[for (int i = 0; i < n; i++) 'a$i: b'].join(' ')} }';
+      expect((await run(aliases(50), counted)).errors, isEmpty);
+      runs = 0;
+      // the fragment is expanded: 50 aliases in it and one more outside
+      GraphQLResponse r = await run(
+        '{ z: b ...F } fragment F on Query ${aliases(50)}',
+        counted,
+      );
+      expect(r.data, isNull);
+      expect(
+        r.errors.single.message,
+        'The operation has too many top-level fields: the limit is 50.',
+      );
+      expect(runs, 0);
+    });
+
+    test('maxRootFields is configurable', () async {
+      GraphQLExecutor<Object?> small = GraphQLExecutor<Object?>(
+        schema,
+        maxRootFields: 2,
+      );
+      expect((await run('{ x: b y: b }', small)).errors, isEmpty);
+      expect(
+        (await run('{ x: b y: b z: b }', small)).errors.single.message,
+        startsWith('The operation has too many top-level fields'),
+      );
+    });
+
     test('many aliases of a big introspection selection', () async {
       String one =
           '__schema { types { name kind fields { name args { name type { name kind ofType { name kind } } } type { name kind ofType { name kind } } } } }';

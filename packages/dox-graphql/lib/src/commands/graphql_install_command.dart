@@ -78,7 +78,11 @@ import 'package:$app/generated/schema.g.dart';
 /// `@GraphQLType`, `@GraphQLQuery` and `@GraphQLMutation` annotations.
 /// `path`: the URL of the endpoint, `/graphql` by default.
 /// `middleware`: run before the requests, for example an auth middleware.
-GraphQLConfig graphqlConfig = GraphQLConfig(schema: graphqlSchema);
+GraphQLConfig graphqlConfig = GraphQLConfig(
+  schema: graphqlSchema,
+  // Without an auth middleware, every field of the API is public.
+  // middleware: <Object>[AuthMiddleware()],
+);
 ''';
   }
 

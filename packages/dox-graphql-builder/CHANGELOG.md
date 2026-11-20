@@ -1,5 +1,19 @@
 ## Unreleased
 
+- A policy with a `viewAny`, `view` or `create` method now guards the
+  reads and the create. The list query asks `viewAny` before the query.
+  The find query asks `view` on the row. A relation to the model asks
+  `viewAny`, and gives null with `FORBIDDEN` when denied. `createPost`
+  asks `create` before it saves. A policy with no such method keeps the
+  old behavior.
+- A denied guest gets `UNAUTHENTICATED`, and a denied user gets
+  `FORBIDDEN`. When the user type of the policy is not nullable, a guest
+  is stopped before the row lookup.
+- Find, update and delete check a missing id as a blank row. A user that
+  the policy denies gets the same error for an id that exists and for
+  an id that does not exist.
+- List relations (`HasMany`, `ManyToMany`, `HasManyThrough`,
+  `MorphMany`) load with `GraphQLOrm.many`, with a row limit.
 - `@GraphQLType(owner: 'userId')`: `createPost` sets the owner column to
   the id of the logged-in user, and needs a login. The build fails when
   the owner is not an int or String column of the model, is a field of
