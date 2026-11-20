@@ -400,6 +400,9 @@ final class ResponsePath {
 ///
 /// [fields] is a function, so that types can point at each other.
 /// Without [isTypeOf], a value belongs to this type when it is an [S].
+/// For an interface or union, that Dart check must pick exactly one
+/// possible type. Two types made from the same Dart type (like two `Map`
+/// types) need [isTypeOf], or `resolveType` on the interface or union.
 class ObjectType<S, C> extends NamedType {
   ObjectType(
     super.name, {
@@ -453,7 +456,9 @@ class InterfaceType extends NamedType {
   final List<InterfaceType> interfaces;
 
   /// Picks the object type of a value. Without it, a `Map` value with a
-  /// `__typename` key is used, then `isTypeOf` of each possible type.
+  /// `__typename` key is used. Then a possible type whose explicit
+  /// `isTypeOf` is true. Then the one possible type whose Dart type
+  /// matches; when none or more than one match, the field fails.
   final TypeResolver? resolveType;
 
   late final List<Field<Object?, Object?>> fields = _fields();

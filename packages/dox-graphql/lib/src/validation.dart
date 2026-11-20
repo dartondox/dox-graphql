@@ -128,6 +128,8 @@ final class DocumentValidator {
       _validate();
     } on _TooManyErrors {
       errors.add(tooManyErrors());
+    } on _TooComplex {
+      errors.add(GraphQLError('The query is too complex to validate.'));
     }
     return errors;
   }
@@ -551,24 +553,28 @@ final class DocumentValidator {
     }
   }
 
-  /// The fragments that an operation or fragment reaches, without itself.
-  Set<String> _reachable(_DefinitionUses uses) {
-    Set<String> out = <String>{};
-    List<_DefinitionUses> todo = <_DefinitionUses>[uses];
-    while (todo.isNotEmpty) {
-      for (FragmentSpreadNode s in todo.removeLast().spreads) {
-        String name = s.name.value;
-        _DefinitionUses? next = _fragmentUses[name];
-        if (next != null && out.add(name)) todo.add(next);
-      }
-    }
-    return out;
+  /// The most work the fragment and variable checks may do.
+  static const int _budget = 500000;
+  int _work = 0;
+
+  void _spend(int work) {
+    _work += work;
+    if (_work > _budget) throw const _TooComplex();
   }
 
+  /// Marks every fragment that an operation reaches, in one walk for all
+  /// operations.
   void _checkFragmentUse(Map<OperationDefinitionNode, _DefinitionUses> ops) {
     Set<String> used = <String>{};
-    for (_DefinitionUses uses in ops.values) {
-      used.addAll(_reachable(uses));
+    List<_DefinitionUses> todo = <_DefinitionUses>[...ops.values];
+    while (todo.isNotEmpty) {
+      List<FragmentSpreadNode> spreads = todo.removeLast().spreads;
+      _spend(spreads.length);
+      for (FragmentSpreadNode s in spreads) {
+        String name = s.name.value;
+        _DefinitionUses? next = _fragmentUses[name];
+        if (next != null && used.add(name)) todo.add(next);
+      }
     }
     for (FragmentDefinitionNode f in _fragments.values) {
       if (!used.contains(f.name.value)) {
@@ -577,43 +583,121 @@ final class DocumentValidator {
     }
   }
 
+  /// Finds fragment cycles. It uses its own stack, so a long fragment chain
+  /// cannot use up the call stack.
   void _checkFragmentCycles() {
     Set<String> visited = <String>{};
-    List<FragmentSpreadNode> path = <FragmentSpreadNode>[];
-    Map<String, int> pathIndex = <String, int>{};
-
-    void detect(String name) {
-      if (!visited.add(name)) return;
-      List<FragmentSpreadNode> spreads =
-          _fragmentUses[name]?.spreads ?? const <FragmentSpreadNode>[];
-      if (spreads.isEmpty) return;
-      pathIndex[name] = path.length;
-      for (FragmentSpreadNode s in spreads) {
-        String next = s.name.value;
-        int? index = pathIndex[next];
-        path.add(s);
-        if (index == null) {
-          if (_fragments.containsKey(next)) detect(next);
-        } else {
-          List<FragmentSpreadNode> cycle = path.sublist(index);
+    for (String start in _fragments.keys) {
+      if (visited.contains(start)) continue;
+      List<String> names = <String>[];
+      List<int> nextSpread = <int>[];
+      List<FragmentSpreadNode> path = <FragmentSpreadNode>[];
+      Map<String, int> pathIndex = <String, int>{};
+      visited.add(start);
+      pathIndex[start] = 0;
+      names.add(start);
+      nextSpread.add(0);
+      while (names.isNotEmpty) {
+        String name = names.last;
+        int i = nextSpread.last;
+        List<FragmentSpreadNode> spreads =
+            _fragmentUses[name]?.spreads ?? const <FragmentSpreadNode>[];
+        if (i >= spreads.length) {
+          names.removeLast();
+          nextSpread.removeLast();
+          pathIndex.remove(name);
+          if (names.isNotEmpty) path.removeLast();
+          continue;
+        }
+        nextSpread[nextSpread.length - 1] = i + 1;
+        _spend(1);
+        FragmentSpreadNode s = spreads[i];
+        String target = s.name.value;
+        int? index = pathIndex[target];
+        if (index != null) {
+          List<FragmentSpreadNode> cycle = <FragmentSpreadNode>[
+            ...path.sublist(index),
+            s,
+          ];
           List<String> via = <String>[
             for (FragmentSpreadNode c in cycle.sublist(0, cycle.length - 1))
               c.name.value,
           ];
           _error(
-            'Cannot spread fragment "$next" within itself'
+            'Cannot spread fragment "$target" within itself'
             '${via.isEmpty ? '' : ' via ${via.join(', ')}'}.',
             cycle,
           );
+          continue;
         }
-        path.removeLast();
+        if (!_fragments.containsKey(target) || !visited.add(target)) continue;
+        path.add(s);
+        pathIndex[target] = path.length;
+        names.add(target);
+        nextSpread.add(0);
       }
-      pathIndex.remove(name);
     }
+  }
 
-    for (String name in _fragments.keys) {
-      detect(name);
+  /// The variable uses of a fragment and all fragments it reaches, without
+  /// repeats: one use per name, place type and default. Each fragment is
+  /// done once, with its own stack.
+  final Map<String, Map<String, _VariableUsage>> _fragmentVariables =
+      <String, Map<String, _VariableUsage>>{};
+
+  static String _usageKey(_VariableUsage u) =>
+      '${u.node.name.value}|${u.type}|${u.hasDefault}';
+
+  Map<String, _VariableUsage> _variablesOf(String fragment) {
+    Map<String, _VariableUsage>? known = _fragmentVariables[fragment];
+    if (known != null) return known;
+    Set<String> started = <String>{};
+    List<String> stack = <String>[fragment];
+    while (stack.isNotEmpty) {
+      String name = stack.last;
+      if (_fragmentVariables.containsKey(name)) {
+        stack.removeLast();
+        continue;
+      }
+      _DefinitionUses? uses = _fragmentUses[name];
+      if (uses == null) {
+        _fragmentVariables[name] = <String, _VariableUsage>{};
+        stack.removeLast();
+        continue;
+      }
+      if (started.add(name)) {
+        // First its fragments; a fragment in a cycle is skipped.
+        for (FragmentSpreadNode s in uses.spreads) {
+          String next = s.name.value;
+          if (!_fragmentVariables.containsKey(next) &&
+              !started.contains(next)) {
+            stack.add(next);
+          }
+        }
+        continue;
+      }
+      stack.removeLast();
+      Map<String, _VariableUsage> out = _ownVariables(uses);
+      for (FragmentSpreadNode s in uses.spreads) {
+        Map<String, _VariableUsage>? sub = _fragmentVariables[s.name.value];
+        if (sub == null) continue;
+        _spend(sub.length);
+        for (MapEntry<String, _VariableUsage> e in sub.entries) {
+          out.putIfAbsent(e.key, () => e.value);
+        }
+      }
+      _fragmentVariables[name] = out;
     }
+    return _fragmentVariables[fragment]!;
+  }
+
+  Map<String, _VariableUsage> _ownVariables(_DefinitionUses uses) {
+    _spend(uses.variables.length);
+    Map<String, _VariableUsage> out = <String, _VariableUsage>{};
+    for (_VariableUsage u in uses.variables) {
+      out.putIfAbsent(_usageKey(u), () => u);
+    }
+    return out;
   }
 
   void _checkVariables(OperationDefinitionNode op, _DefinitionUses uses) {
@@ -622,12 +706,18 @@ final class DocumentValidator {
       for (VariableDefinitionNode d in op.variableDefinitions)
         d.variable.name.value: d,
     };
-    List<_VariableUsage> usages = <_VariableUsage>[
-      ...uses.variables,
-      for (String f in _reachable(uses)) ...?_fragmentUses[f]?.variables,
-    ];
+    Map<String, _VariableUsage> usages = _ownVariables(uses);
+    Set<String> spread = <String>{};
+    for (FragmentSpreadNode s in uses.spreads) {
+      if (!spread.add(s.name.value)) continue;
+      Map<String, _VariableUsage> sub = _variablesOf(s.name.value);
+      _spend(sub.length);
+      for (MapEntry<String, _VariableUsage> e in sub.entries) {
+        usages.putIfAbsent(e.key, () => e.value);
+      }
+    }
     Set<String> used = <String>{};
-    for (_VariableUsage u in usages) {
+    for (_VariableUsage u in usages.values) {
       String name = u.node.name.value;
       used.add(name);
       VariableDefinitionNode? def = defs[name];

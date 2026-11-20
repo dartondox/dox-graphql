@@ -601,6 +601,49 @@ void main() {
       });
     });
 
+    test('two Map types without a resolver cannot be told apart', () async {
+      ObjectType<Map<String, Object?>, Ctx> mapDog =
+          ObjectType<Map<String, Object?>, Ctx>(
+            'MapDog',
+            fields: () => <Field<Map<String, Object?>, Ctx>>[
+              Field<Map<String, Object?>, Ctx>('name', graphqlString),
+            ],
+          );
+      ObjectType<Map<String, Object?>, Ctx> mapCat =
+          ObjectType<Map<String, Object?>, Ctx>(
+            'MapCat',
+            fields: () => <Field<Map<String, Object?>, Ctx>>[
+              Field<Map<String, Object?>, Ctx>('name', graphqlString),
+            ],
+          );
+      UnionType mapPet = UnionType('MapPet', <ObjectType<Object?, Object?>>[
+        mapDog,
+        mapCat,
+      ]);
+      Schema<Ctx> s = Schema<Ctx>(
+        query: ObjectType<Object?, Ctx>(
+          'Query',
+          fields: () => <Field<Object?, Ctx>>[
+            Field<Object?, Ctx>(
+              'pet',
+              mapPet,
+              resolve: (Object? _, ResolveInfo<Ctx> i) => <String, Object?>{
+                'name': 'Tom',
+              },
+            ),
+          ],
+        ),
+      );
+      GraphQLResponse r = await GraphQLExecutor<Ctx>(
+        s,
+      ).execute(const GraphQLRequest('{ pet { __typename } }'), context: Ctx());
+      expect(r.data, <String, Object?>{'pet': null});
+      expect(
+        r.errors.single.message,
+        startsWith('Abstract type "MapPet" must resolve to an Object type'),
+      );
+    });
+
     test('a value of no possible type is an error', () async {
       Map<String, Object?> r = await run('{ strangePet { __typename } }');
       expect(r['data'], <String, Object?>{'strangePet': null});

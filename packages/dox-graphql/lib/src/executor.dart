@@ -66,7 +66,8 @@ final class GraphQLExecutor<C> {
   final int maxFields;
   final int maxNodes;
 
-  /// Validation stops after this many errors.
+  /// Validation stops after this many errors, and a request stops after
+  /// this many field errors.
   final int maxErrors;
   final bool showInternalErrors;
 
@@ -163,6 +164,7 @@ final class GraphQLExecutor<C> {
       context,
       showInternalErrors,
       maxNodes,
+      maxErrors,
     ).run();
   }
 
@@ -226,9 +228,12 @@ final class _NullBubble {
   const _NullBubble();
 }
 
-/// Thrown when the execution passes `maxNodes`. It stops the request.
-final class _TooMuchWork {
-  const _TooMuchWork();
+/// Thrown when the execution passes `maxNodes` or `maxErrors`. It stops
+/// the whole request.
+final class _Stop {
+  const _Stop(this.error);
+
+  final GraphQLError error;
 }
 
 /// A field that is not in the schema: left out of the result.
@@ -248,6 +253,7 @@ final class _Execution {
     this.context,
     this.showInternalErrors,
     this.maxNodes,
+    this.maxErrors,
   ) : variableValues = InputValues(variables);
 
   final Schema<Object?> schema;
@@ -258,6 +264,7 @@ final class _Execution {
   final Object? context;
   final bool showInternalErrors;
   final int maxNodes;
+  final int maxErrors;
   int _nodes = 0;
 
   /// The sub fields of each object type and field node list. All items of
@@ -293,24 +300,44 @@ final class _Execution {
           : await _fields(root, null, fields, null);
     } on _NullBubble {
       data = null;
-    } on _TooMuchWork {
-      return GraphQLResponse(
-        errors: <GraphQLError>[
-          GraphQLError(
-            'The query returns too much data: the limit is $maxNodes fields '
-            'and list items.',
-          ),
-        ],
-      );
+    } on _Stop catch (stop) {
+      return GraphQLResponse(errors: <GraphQLError>[...errors, stop.error]);
     }
     return GraphQLResponse(data: data, errors: errors);
+  }
+
+  /// Set when the request must stop. Every new piece of work checks it.
+  _Stop? _stopped;
+
+  /// Throws when the request was stopped.
+  void _check() {
+    _Stop? stop = _stopped;
+    if (stop != null) throw stop;
+  }
+
+  /// Like [_check], for a loop that starts futures. The started ones are
+  /// not awaited after a stop, so their errors are ignored.
+  void _checkStarted(List<Future<Object?>> started) {
+    if (_stopped == null) return;
+    for (Future<Object?> f in started) {
+      f.ignore();
+    }
+    _check();
   }
 
   /// Counts resolved fields and list items. Past [maxNodes], it stops the
   /// whole request.
   void _spend(int nodes) {
+    _check();
     _nodes += nodes;
-    if (_nodes > maxNodes) throw const _TooMuchWork();
+    if (_nodes > maxNodes) {
+      throw _stopped = _Stop(
+        GraphQLError(
+          'The query returns too much data: the limit is $maxNodes fields '
+          'and list items.',
+        ),
+      );
+    }
   }
 
   /// Collects the fields of a selection set by response name, with
@@ -389,10 +416,13 @@ final class _Execution {
     ResponsePath? path,
   ) async {
     List<String> keys = fields.keys.toList();
-    List<Object?> values = await Future.wait(<Future<Object?>>[
-      for (String key in keys)
-        _field(type, source, fields[key]!, _path(path, key)),
-    ]);
+    List<Future<Object?>> futures = <Future<Object?>>[];
+    for (String key in keys) {
+      // Stop starting work at once when the request was stopped.
+      _checkStarted(futures);
+      futures.add(_field(type, source, fields[key]!, _path(path, key)));
+    }
+    List<Object?> values = await Future.wait(futures);
     Map<String, Object?> out = <String, Object?>{};
     for (int i = 0; i < keys.length; i++) {
       if (!identical(values[i], _skip)) out[keys[i]] = values[i];
@@ -447,7 +477,7 @@ final class _Execution {
       );
       Object? result = await def.resolveFor(source, info);
       return await _complete(def.type, type, nodes, path, result);
-    } on _TooMuchWork {
+    } on _Stop {
       rethrow;
     } on _NullBubble {
       if (def.type is NonNullType) rethrow;
@@ -465,6 +495,7 @@ final class _Execution {
     List<FieldNode> nodes,
     ResponsePath path,
   ) {
+    _check();
     List<SourceLocation> locations = GraphQLError.locationsOf(nodes);
     errors.add(
       error is GraphQLError
@@ -477,6 +508,13 @@ final class _Execution {
               stackTrace: stackTrace,
             ),
     );
+    if (errors.length >= maxErrors) {
+      throw _stopped = _Stop(
+        GraphQLError(
+          'Too many errors: the limit is $maxErrors. The request was stopped.',
+        ),
+      );
+    }
     if (type is NonNullType) throw const _NullBubble();
     return null;
   }
@@ -510,10 +548,14 @@ final class _Execution {
         }
         List<Object?> items = result.toList();
         _spend(items.length);
-        return Future.wait(<Future<Object?>>[
-          for (int i = 0; i < items.length; i++)
+        List<Future<Object?>> futures = <Future<Object?>>[];
+        for (int i = 0; i < items.length; i++) {
+          _checkStarted(futures);
+          futures.add(
             _item(type.ofType, parent, nodes, path.index(i), items[i]),
-        ]);
+          );
+        }
+        return Future.wait(futures);
       case ScalarType<Object>():
         return type.serialize(result);
       case EnumType<Object?>():
@@ -542,9 +584,10 @@ final class _Execution {
     ResponsePath path,
     Object? item,
   ) async {
+    _check();
     try {
       return await _complete(type, parent, nodes, path, item);
-    } on _TooMuchWork {
+    } on _Stop {
       rethrow;
     } on _NullBubble {
       if (type is NonNullType) rethrow;
@@ -581,6 +624,26 @@ final class _Execution {
     return _fields(type, result, fields, path);
   }
 
+  /// The possible type of [value]. An explicit `isTypeOf` wins. Else the
+  /// Dart type check (`value is S`) must match exactly one type: two
+  /// types made from the same Dart type (like two `Map` types) cannot be
+  /// told apart, so that gives null.
+  ObjectType<Object?, Object?>? _typeOf(NamedType abstractType, Object value) {
+    List<ObjectType<Object?, Object?>> possible = schema.possibleTypes(
+      abstractType,
+    );
+    for (ObjectType<Object?, Object?> t in possible) {
+      if (t.hasIsTypeOf && t.isTypeOf(value)) return t;
+    }
+    ObjectType<Object?, Object?>? match;
+    for (ObjectType<Object?, Object?> t in possible) {
+      if (t.hasIsTypeOf || !t.isTypeOf(value)) continue;
+      if (match != null) return null;
+      match = t;
+    }
+    return match;
+  }
+
   ObjectType<Object?, Object?> _resolveType(
     NamedType abstractType,
     ObjectType<Object?, Object?> parent,
@@ -599,14 +662,7 @@ final class _Execution {
       NamedType? t = schema.type(value['__typename'] as String);
       if (t is ObjectType<Object?, Object?>) runtime = t;
     } else {
-      for (ObjectType<Object?, Object?> t in schema.possibleTypes(
-        abstractType,
-      )) {
-        if (t.isTypeOf(value)) {
-          runtime = t;
-          break;
-        }
-      }
+      runtime = _typeOf(abstractType, value);
     }
     if (runtime == null) {
       throw GraphQLError(

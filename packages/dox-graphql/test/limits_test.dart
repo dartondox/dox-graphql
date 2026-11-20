@@ -1,4 +1,5 @@
 import 'package:dox_graphql/dox_graphql.dart';
+import 'package:gql/language.dart';
 import 'package:test/test.dart';
 
 // A type that points at itself, so queries can nest without end.
@@ -14,6 +15,11 @@ final ObjectType<int, Object?> nodeType = ObjectType<int, Object?>(
       'b',
       graphqlInt,
       resolve: (int n, ResolveInfo<Object?> i) => n,
+    ),
+    Field<int, Object?>(
+      'boom',
+      graphqlInt,
+      resolve: (int n, ResolveInfo<Object?> i) => throw GraphQLError('boom'),
     ),
     Field<int, Object?>(
       'list',
@@ -35,6 +41,7 @@ final Schema<Object?> schema = Schema<Object?>(
       Field<Object?, Object?>(
         'b',
         graphqlInt,
+        args: <Argument>[Argument('x', graphqlInt)],
         resolve: (Object? _, ResolveInfo<Object?> i) => 1,
       ),
       Field<Object?, Object?>(
@@ -104,10 +111,10 @@ void main() {
       GraphQLResponse r = await run('# ${'{' * 100}\n{ b @skip(if: false) }');
       expect(r.errors, isEmpty);
       GraphQLResponse s = await run('{ b(x: "${'{' * 100}") }');
-      // Unknown argument, but not too deep.
+      // A wrong value, but not too deep.
       expect(
         s.errors.single.message,
-        'Unknown argument "x" on field "Query.b".',
+        startsWith('Expected value of type "Int"'),
       );
     });
 
@@ -300,6 +307,83 @@ void main() {
         ((await withSkip(false)).data!['items']! as List<Object?>).first,
         <String, Object?>{'b': 0},
       );
+    });
+  });
+
+  group('round 4 limits', () {
+    test(
+      'work stops at once after maxNodes: 1000 items x 2000 aliases',
+      () async {
+        StringBuffer q = StringBuffer('{ items { ');
+        for (int i = 0; i < 2000; i++) {
+          q.write('a$i: b ');
+        }
+        q.write('} }');
+        await fast(() async {
+          GraphQLResponse r = await run(q.toString());
+          expect(r.data, isNull);
+          expect(
+            r.errors.single.message,
+            startsWith('The query returns too much data'),
+          );
+        }, const Duration(seconds: 1));
+      },
+    );
+
+    test('many operations on a long fragment chain', () async {
+      StringBuffer q = StringBuffer();
+      for (int i = 0; i < 15000; i++) {
+        q.writeln('query Q$i { ...F0 }');
+      }
+      for (int i = 0; i < 15000; i++) {
+        q.writeln('fragment F$i on Query { b ...F${i + 1} }');
+      }
+      q.writeln('fragment F15000 on Query { b }');
+      await fast(() async {
+        GraphQLResponse r = await run(q.toString());
+        // A 15000 fragment chain is too deep to walk.
+        expect(r.hasData, isFalse);
+        expect(r.errors, isNotEmpty);
+      }, const Duration(seconds: 1));
+    });
+
+    test('many operations on a fragment with many variable uses', () async {
+      StringBuffer q = StringBuffer();
+      for (int i = 0; i < 10000; i++) {
+        q.writeln('query Q$i(\$v: Int) { ...F }');
+      }
+      q.write('fragment F on Query { ');
+      for (int i = 0; i < 15000; i++) {
+        q.write('a$i: b(x: \$v) ');
+      }
+      q.writeln('}');
+      String query = q.toString();
+      await fast(() async {
+        // The variable checks are done once for the fragment. Expanding the
+        // fragment in every operation for the overlap check runs into the
+        // work budget, which ends validation fast.
+        expect(
+          executor.validate(parseString(query)).single.message,
+          'The query is too complex to validate.',
+        );
+      }, const Duration(seconds: 1));
+    });
+
+    test('a request stops after maxErrors field errors', () async {
+      StringBuffer q = StringBuffer('{ items { ');
+      for (int i = 0; i < 95; i++) {
+        q.write('a$i: boom ');
+      }
+      q.write('} }');
+      await fast(() async {
+        GraphQLResponse r = await run(q.toString());
+        expect(r.data, isNull);
+        expect(r.errors, hasLength(101));
+        expect(
+          r.errors.last.message,
+          'Too many errors: the limit is 100. The request was stopped.',
+        );
+      }, const Duration(seconds: 1));
     });
   });
 

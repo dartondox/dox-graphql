@@ -80,7 +80,9 @@ Future<void> main() async {
 - `ObjectType<S, C>`: `S` is the Dart type of the parent value, `C` the
   type of the context. Without `isTypeOf`, a value belongs to the type
   when it is an `S`. This is how interfaces and unions find the type of
-  a value.
+  a value. When two possible types match the same value this way (like
+  two types made from `Map`), the field fails: give them `isTypeOf`, or
+  give the interface or union a `resolveType`.
 - Default values are GraphQL literal text: `'10'`, `'"hi"'`, `'RED'`,
   `'{limit: 5}'`. They are checked when the schema is built.
 - Resolvers read arguments with typed getters: `info.args.get<int>('id')`,
@@ -90,7 +92,7 @@ Future<void> main() async {
   selects more than `maxFields` (20,000) fields, with fragments expanded,
   is rejected before it runs. A request stops with one error when it
   resolves more than `maxNodes` (100,000) fields and list items.
-  Validation stops after `maxErrors` (100) errors.
+  Validation, and a request, stop after `maxErrors` (100) errors.
 - An error from a resolver that is not a `GraphQLError` is sent as
   "Internal server error". Turn on `showInternalErrors` in development
   to see the real message. Throw a `GraphQLError` to send your own.
