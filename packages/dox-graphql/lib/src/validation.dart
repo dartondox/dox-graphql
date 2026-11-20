@@ -674,14 +674,32 @@ final class _FieldEntry {
   final Field<Object?, Object?>? def;
 }
 
+/// Thrown when the overlap check needs too much work.
+final class _TooComplex {
+  const _TooComplex();
+}
+
 /// The "overlapping fields can be merged" rule: two fields with the same
 /// response name must give one unambiguous value.
+///
+/// It is linear in normal queries: in a group of fields with the same
+/// response name, each field is compared with one reference field, not
+/// with every other field. Same name and same arguments is an equivalence,
+/// so this finds the same conflicts. A work budget stops hostile queries.
 final class _OverlapChecker {
   _OverlapChecker(this.schema, this.fragments, this.errors);
 
   final Schema<Object?> schema;
   final Map<String, FragmentDefinitionNode> fragments;
   final List<GraphQLError> errors;
+
+  /// The most field visits and comparisons one document may need.
+  static const int _budget = 500000;
+  int _work = 0;
+
+  /// The collected fields of each selection set, with fragments expanded.
+  final Map<SelectionSetNode, Map<String, List<_FieldEntry>>> _collected =
+      Map<SelectionSetNode, Map<String, List<_FieldEntry>>>.identity();
 
   /// Pairs already compared, as exclusive or not.
   final Map<FieldNode, Set<FieldNode>> _done =
@@ -690,13 +708,28 @@ final class _OverlapChecker {
       Map<FieldNode, Set<FieldNode>>.identity();
 
   void checkDocument(DocumentNode document) {
-    for (DefinitionNode d in document.definitions) {
-      if (d is OperationDefinitionNode) {
-        _visit(d.selectionSet, schema.rootType(d.type));
-      } else if (d is FragmentDefinitionNode) {
-        _visit(d.selectionSet, _composite(d.typeCondition.on.name.value));
+    try {
+      for (DefinitionNode d in document.definitions) {
+        if (d is OperationDefinitionNode) {
+          _visit(d.selectionSet, schema.rootType(d.type), true);
+        } else if (d is FragmentDefinitionNode) {
+          // The fields at the top of a fragment are compared where the
+          // fragment is spread. Only its inner selections are checked here.
+          _visit(
+            d.selectionSet,
+            _composite(d.typeCondition.on.name.value),
+            false,
+          );
+        }
       }
+    } on _TooComplex {
+      errors.add(GraphQLError('The query is too complex to validate.'));
     }
+  }
+
+  void _spend(int work) {
+    _work += work;
+    if (_work > _budget) throw const _TooComplex();
   }
 
   NamedType? _composite(String name) {
@@ -704,18 +737,16 @@ final class _OverlapChecker {
     return t != null && t.isComposite ? t : null;
   }
 
-  NamedType? _subType(_FieldEntry e) {
-    NamedType? t = e.def?.type.namedType;
+  NamedType? _subType(Field<Object?, Object?>? def) {
+    NamedType? t = def?.type.namedType;
     return t != null && t.isComposite ? t : null;
   }
 
-  void _visit(SelectionSetNode set, NamedType? parent) {
-    Map<String, List<_FieldEntry>> fields = _collect(set, parent);
-    for (List<_FieldEntry> list in fields.values) {
-      for (int i = 0; i < list.length; i++) {
-        for (int j = i + 1; j < list.length; j++) {
-          _pair(list[i], list[j], false);
-        }
+  /// Checks a selection set from the text, and the sets inside it.
+  void _visit(SelectionSetNode set, NamedType? parent, bool compare) {
+    if (compare) {
+      for (List<_FieldEntry> group in _collect(set, parent).values) {
+        _group(group, false);
       }
     }
     for (SelectionNode s in set.selections) {
@@ -726,12 +757,14 @@ final class _OverlapChecker {
           Field<Object?, Object?>? def = parent == null
               ? null
               : schema.field(parent, s.name.value);
-          _visit(sub, _subType(_FieldEntry(parent, s, def)));
+          _visit(sub, _subType(def), true);
         case InlineFragmentNode():
+          // Its fields are in the collected fields of [set].
           NamedTypeNode? on = s.typeCondition?.on;
           _visit(
             s.selectionSet,
             on == null ? parent : _composite(on.name.value),
+            false,
           );
         default:
           break;
@@ -741,12 +774,23 @@ final class _OverlapChecker {
 
   Map<String, List<_FieldEntry>> _collect(
     SelectionSetNode set,
-    NamedType? parent, [
-    Map<String, List<_FieldEntry>>? into,
-    Set<String>? seenFragments,
-  ]) {
-    Map<String, List<_FieldEntry>> out = into ?? <String, List<_FieldEntry>>{};
-    Set<String> seen = seenFragments ?? <String>{};
+    NamedType? parent,
+  ) {
+    return _collected[set] ??= _collectInto(
+      set,
+      parent,
+      <String, List<_FieldEntry>>{},
+      <String>{},
+    );
+  }
+
+  Map<String, List<_FieldEntry>> _collectInto(
+    SelectionSetNode set,
+    NamedType? parent,
+    Map<String, List<_FieldEntry>> out,
+    Set<String> seen,
+  ) {
+    _spend(set.selections.length);
     for (SelectionNode s in set.selections) {
       switch (s) {
         case FieldNode():
@@ -757,7 +801,7 @@ final class _OverlapChecker {
           (out[key] ??= <_FieldEntry>[]).add(_FieldEntry(parent, s, def));
         case InlineFragmentNode():
           NamedTypeNode? on = s.typeCondition?.on;
-          _collect(
+          _collectInto(
             s.selectionSet,
             on == null ? parent : _composite(on.name.value),
             out,
@@ -766,7 +810,7 @@ final class _OverlapChecker {
         case FragmentSpreadNode():
           FragmentDefinitionNode? f = fragments[s.name.value];
           if (f != null && seen.add(s.name.value)) {
-            _collect(
+            _collectInto(
               f.selectionSet,
               _composite(f.typeCondition.on.name.value),
               out,
@@ -780,6 +824,41 @@ final class _OverlapChecker {
     return out;
   }
 
+  /// Checks a group of fields with one response name.
+  ///
+  /// Two fields must have the same name and arguments, unless their
+  /// parents are different object types. So each field is compared with a
+  /// field it must match: the first one with a non-object parent, else the
+  /// first one with the same parent. The first fields of each parent are
+  /// compared with the first field of the group, for the response shape.
+  void _group(List<_FieldEntry> group, bool parentsExclusive) {
+    if (group.length < 2) return;
+    _FieldEntry first = group.first;
+    _FieldEntry? nonObject;
+    for (_FieldEntry e in group) {
+      if (e.parent is! ObjectType<Object?, Object?>) {
+        nonObject = e;
+        break;
+      }
+    }
+    Map<NamedType?, _FieldEntry> firstOfParent =
+        Map<NamedType?, _FieldEntry>.identity();
+    for (_FieldEntry e in group) {
+      _FieldEntry reference;
+      if (parentsExclusive) {
+        reference = first;
+      } else if (nonObject != null) {
+        reference = nonObject;
+      } else {
+        reference = firstOfParent.putIfAbsent(e.parent, () => e);
+        if (identical(reference, e)) reference = first;
+      }
+      if (!identical(reference.node, e.node)) {
+        _pair(reference, e, parentsExclusive);
+      }
+    }
+  }
+
   bool _markDone(FieldNode a, FieldNode b, bool exclusive) {
     Map<FieldNode, Set<FieldNode>> done = exclusive ? _doneExclusive : _done;
     Set<FieldNode> forA = done[a] ??= Set<FieldNode>.identity();
@@ -789,7 +868,7 @@ final class _OverlapChecker {
   }
 
   void _pair(_FieldEntry a, _FieldEntry b, bool parentsExclusive) {
-    if (identical(a.node, b.node)) return;
+    _spend(1);
     bool exclusive =
         parentsExclusive ||
         (!identical(a.parent, b.parent) &&
@@ -829,16 +908,13 @@ final class _OverlapChecker {
     SelectionSetNode? setA = a.node.selectionSet;
     SelectionSetNode? setB = b.node.selectionSet;
     if (setA == null || setB == null) return;
-    Map<String, List<_FieldEntry>> subA = _collect(setA, _subType(a));
-    Map<String, List<_FieldEntry>> subB = _collect(setB, _subType(b));
+    Map<String, List<_FieldEntry>> subA = _collect(setA, _subType(defA));
+    Map<String, List<_FieldEntry>> subB = _collect(setB, _subType(defB));
     for (MapEntry<String, List<_FieldEntry>> e in subA.entries) {
       List<_FieldEntry>? other = subB[e.key];
       if (other == null) continue;
-      for (_FieldEntry x in e.value) {
-        for (_FieldEntry y in other) {
-          _pair(x, y, exclusive);
-        }
-      }
+      _spend(e.value.length + other.length);
+      _group(<_FieldEntry>[...e.value, ...other], exclusive);
     }
   }
 

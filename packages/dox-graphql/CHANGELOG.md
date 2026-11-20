@@ -14,4 +14,11 @@
     `path`.
   - Introspection (`__schema`, `__type`), with a switch to turn it off.
   - A typed context object for every resolver.
-  - `DataLoader` to batch and cache loads.
+  - `DataLoader` to batch and cache loads. With
+    `DataLoader.withResults`, one key can fail on its own (`LoadResult`).
+  - Safety limits: `maxDepth` (64) and `maxQueryLength` (1,000,000
+    characters), a work budget for the overlapping fields check, and
+    `execute` never throws.
+  - Errors from resolvers that are not a `GraphQLError` are sent as
+    "Internal server error". `showInternalErrors: true` shows the real
+    message.

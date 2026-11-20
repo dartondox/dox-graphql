@@ -85,5 +85,10 @@ Future<void> main() async {
   `'{limit: 5}'`. They are checked when the schema is built.
 - Resolvers read arguments with typed getters: `info.args.get<int>('id')`,
   `info.args.list<String>('tags')`, `info.args.input('filter')`.
+- `execute` never throws. A query deeper than `maxDepth` (64) or longer
+  than `maxQueryLength` is rejected before it is parsed.
+- An error from a resolver that is not a `GraphQLError` is sent as
+  "Internal server error". Turn on `showInternalErrors` in development
+  to see the real message. Throw a `GraphQLError` to send your own.
 - Make one `DataLoader` per request, in the context, so the cache lives
   only as long as the request.

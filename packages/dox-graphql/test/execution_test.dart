@@ -623,7 +623,7 @@ void main() {
         });
         List<Object?> errors = r['errors'] as List<Object?>;
         expect(errors.single, <String, Object?>{
-          'message': 'Bad state: boom 1',
+          'message': 'Internal server error',
           'locations': <Object?>[
             <String, int>{'line': 1, 'column': 38},
           ],

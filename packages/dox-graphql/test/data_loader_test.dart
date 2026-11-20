@@ -84,6 +84,25 @@ void main() {
     await expectLater(short.load(1), throwsA(isA<StateError>()));
   });
 
+  test('one key can fail on its own', () async {
+    DataLoader<int, String> loader = DataLoader<int, String>.withResults((
+      List<int> keys,
+    ) async {
+      return <LoadResult<String>>[
+        for (int k in keys)
+          k == 2
+              ? LoadError<String>(StateError('no 2'))
+              : LoadValue<String>('v$k'),
+      ];
+    });
+    Future<String?> one = loader.load(1);
+    Future<String?> two = loader.load(2);
+    Future<String?> three = loader.load(3);
+    expect(await one, 'v1');
+    await expectLater(two, throwsA(isA<StateError>()));
+    expect(await three, 'v3');
+  });
+
   test('batches across a GraphQL list (no N+1)', () async {
     ObjectType<Post, LoaderContext> postType = ObjectType<Post, LoaderContext>(
       'Post',

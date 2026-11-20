@@ -8,6 +8,28 @@ abstract interface class BatchLoader<K, V> {
   Future<List<V?>> load(List<K> keys);
 }
 
+/// The result of loading one key: a value or an error.
+sealed class LoadResult<V> {
+  const LoadResult();
+}
+
+/// A loaded value. Null when the key has no value.
+final class LoadValue<V> extends LoadResult<V> {
+  const LoadValue(this.value);
+
+  final V? value;
+}
+
+/// A key that failed. Only the load of this key fails.
+final class LoadError<V> extends LoadResult<V> {
+  const LoadError(this.error, [this.stackTrace]);
+
+  /// What the load of this key throws. Dart can throw any object, so this
+  /// is not typed.
+  final Object error;
+  final StackTrace? stackTrace;
+}
+
 /// Batches and caches loads of one kind of value.
 ///
 /// All [load] calls in the same event-loop turn become one call of the
@@ -20,15 +42,29 @@ abstract interface class BatchLoader<K, V> {
 /// User? user = await users.load(7);
 /// ```
 final class DataLoader<K, V> {
-  DataLoader(Future<List<V?>> Function(List<K> keys) batch) : _batch = batch;
+  /// A loader with a batch function that returns one value per key.
+  DataLoader(Future<List<V?>> Function(List<K> keys) batch)
+    : _batch = _wrap(batch);
 
   /// A loader that calls [loader].
-  DataLoader.of(BatchLoader<K, V> loader) : _batch = loader.load;
+  DataLoader.of(BatchLoader<K, V> loader) : _batch = _wrap(loader.load);
 
-  final Future<List<V?>> Function(List<K> keys) _batch;
+  /// A loader with a batch function that returns one [LoadResult] per key.
+  /// Use it when some keys can fail on their own.
+  DataLoader.withResults(this._batch);
+
+  final Future<List<LoadResult<V>>> Function(List<K> keys) _batch;
   final Map<K, Future<V?>> _cache = <K, Future<V?>>{};
   List<K> _keys = <K>[];
   List<Completer<V?>> _waiting = <Completer<V?>>[];
+
+  static Future<List<LoadResult<V>>> Function(List<K> keys) _wrap<K, V>(
+    Future<List<V?>> Function(List<K> keys) batch,
+  ) {
+    return (List<K> keys) async => <LoadResult<V>>[
+      for (V? v in await batch(keys)) LoadValue<V>(v),
+    ];
+  }
 
   /// Loads one key.
   Future<V?> load(K key) {
@@ -61,23 +97,27 @@ final class DataLoader<K, V> {
     List<Completer<V?>> waiting = _waiting;
     _keys = <K>[];
     _waiting = <Completer<V?>>[];
+    List<LoadResult<V>> results;
     try {
-      List<V?> values = await _batch(keys);
-      if (values.length != keys.length) {
+      results = await _batch(keys);
+      if (results.length != keys.length) {
         throw StateError(
           'The batch function of a DataLoader must return one value per '
-          'key: it got ${keys.length} keys and returned ${values.length} '
+          'key: it got ${keys.length} keys and returned ${results.length} '
           'values.',
         );
       }
-      for (int i = 0; i < keys.length; i++) {
-        waiting[i].complete(values[i]);
-      }
     } catch (e, st) {
-      for (int i = 0; i < keys.length; i++) {
-        // A failed key is not cached, so a later load tries again.
-        _cache.remove(keys[i])?.ignore();
-        waiting[i].completeError(e, st);
+      results = <LoadResult<V>>[for (K _ in keys) LoadError<V>(e, st)];
+    }
+    for (int i = 0; i < keys.length; i++) {
+      switch (results[i]) {
+        case LoadValue<V>(:V? value):
+          waiting[i].complete(value);
+        case LoadError<V>(:Object error, :StackTrace? stackTrace):
+          // A failed key is not cached, so a later load tries again.
+          _cache.remove(keys[i])?.ignore();
+          waiting[i].completeError(error, stackTrace);
       }
     }
   }

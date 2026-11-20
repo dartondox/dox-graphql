@@ -7,6 +7,7 @@ import 'package:source_span/source_span.dart'
 
 import 'errors.dart';
 import 'introspection.dart';
+import 'limits.dart';
 import 'request.dart';
 import 'schema.dart';
 import 'types.dart';
@@ -25,10 +26,24 @@ import 'values.dart';
 final class GraphQLExecutor<C> {
   /// [introspection] turns `__schema` and `__type` on or off. [rules] are
   /// extra validation rules, run after the spec rules.
+  ///
+  /// [maxDepth] limits how deep a query can nest: selection sets (with
+  /// fragments) and the `{`, `(` and `[` of the text. Very deep queries
+  /// can use up the stack, so keep it well below 300.
+  /// [maxQueryLength] limits the query text, in characters.
+  ///
+  /// By default, an error that a resolver throws and that is not a
+  /// [GraphQLError] is sent as "Internal server error", so no internal
+  /// text leaks. [showInternalErrors] sends the real message (for
+  /// development). The real error is always in
+  /// [GraphQLError.originalError].
   GraphQLExecutor(
     this.schema, {
     this.introspection = true,
     List<ValidationRule> rules = const <ValidationRule>[],
+    this.maxDepth = 64,
+    this.maxQueryLength = 1000000,
+    this.showInternalErrors = false,
   }) : rules = <ValidationRule>[
          if (!introspection) const NoIntrospectionRule(),
          ...rules,
@@ -37,15 +52,30 @@ final class GraphQLExecutor<C> {
   final Schema<C> schema;
   final bool introspection;
   final List<ValidationRule> rules;
+  final int maxDepth;
+  final int maxQueryLength;
+  final bool showInternalErrors;
 
-  /// Runs one request. Errors never throw: they are in the response.
+  /// Runs one request. It never throws: errors are in the response.
   Future<GraphQLResponse> execute(
     GraphQLRequest request, {
     required C context,
   }) async {
+    String query = request.query;
+    if (query.length > maxQueryLength) {
+      return GraphQLResponse.failed(<GraphQLError>[
+        GraphQLError(
+          'The query is too long: the limit is $maxQueryLength characters.',
+        ),
+      ]);
+    }
+    if (QueryLimits.textNesting(query) > maxDepth) return _tooDeep();
+
     DocumentNode document;
+    List<GraphQLError> errors;
     try {
-      document = parseString(request.query);
+      document = parseString(query);
+      errors = validate(document);
     } on SourceSpanException catch (e) {
       SourceSpan? span = e.span;
       return GraphQLResponse.failed(<GraphQLError>[
@@ -57,11 +87,36 @@ final class GraphQLExecutor<C> {
           ],
         ),
       ]);
+    } on StackOverflowError {
+      return _tooDeep();
     }
-
-    List<GraphQLError> errors = validate(document);
     if (errors.isNotEmpty) return GraphQLResponse.failed(errors);
 
+    try {
+      return await _run(document, request, context);
+    } on StackOverflowError {
+      return _tooDeep();
+    } catch (e, st) {
+      // A bug in the engine, or a bad custom scalar: never throw.
+      return GraphQLResponse.failed(<GraphQLError>[
+        GraphQLError(
+          showInternalErrors ? e.toString() : 'Internal server error',
+          originalError: e,
+          stackTrace: st,
+        ),
+      ]);
+    }
+  }
+
+  GraphQLResponse _tooDeep() => GraphQLResponse.failed(<GraphQLError>[
+    GraphQLError('The query is nested too deep: the limit is $maxDepth.'),
+  ]);
+
+  Future<GraphQLResponse> _run(
+    DocumentNode document,
+    GraphQLRequest request,
+    C context,
+  ) async {
     OperationDefinitionNode operation;
     try {
       operation = _operation(document, request.operationName);
@@ -85,13 +140,20 @@ final class GraphQLExecutor<C> {
       },
       coerced.$1,
       context,
+      showInternalErrors,
     ).run();
   }
 
-  /// Checks a document: the spec rules first, then [rules].
+  /// Checks a document: the spec rules, the depth with fragments, then
+  /// [rules]. A document that uses up the stack throws a
+  /// [StackOverflowError]; [execute] turns that into an error.
   List<GraphQLError> validate(DocumentNode document) {
     List<GraphQLError> errors = DocumentValidator(schema, document).validate();
-    if (errors.isNotEmpty || rules.isEmpty) return errors;
+    if (errors.isNotEmpty) return errors;
+    if (QueryLimits.selectionDepth(document) > maxDepth) {
+      return _tooDeep().errors;
+    }
+    if (rules.isEmpty) return errors;
     ValidationContext context = ValidationContext(schema, document);
     for (ValidationRule rule in rules) {
       errors.addAll(rule.validate(context));
@@ -141,6 +203,7 @@ final class _Execution {
     this.fragments,
     this.variables,
     this.context,
+    this.showInternalErrors,
   ) : variableValues = InputValues(variables);
 
   final Schema<Object?> schema;
@@ -149,6 +212,7 @@ final class _Execution {
   final Map<String, Object?> variables;
   final InputValues variableValues;
   final Object? context;
+  final bool showInternalErrors;
   final List<GraphQLError> errors = <GraphQLError>[];
 
   Future<GraphQLResponse> run() async {
@@ -328,7 +392,7 @@ final class _Execution {
       error is GraphQLError
           ? error.locate(locations, path.toList())
           : GraphQLError(
-              error.toString(),
+              showInternalErrors ? error.toString() : 'Internal server error',
               locations: locations,
               path: path.toList(),
               originalError: error,
