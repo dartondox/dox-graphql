@@ -101,9 +101,10 @@ The `id`, the columns and the relations become fields. The model gets these auto
 | `updatePost(id, input)` | `dto:` and `policy:` | Changes and checks only the sent fields. `null` if the id is not found. |
 | `deletePost(id)` | `dto:` and `policy:` | Gives `true`, or `false` if the id is not found. |
 
+- The list query, the find query and the relations do not ask the policy today. Thus, `auth: true` is only a login check: each logged-in user can read all rows. For a private model, use `queries: false` and write a `@GraphQLQuery` that gives only the rows of the logged-in user. Put secret columns in `hidden`. A relation to the model still gives its rows.
 - `queries: false` removes the list and find queries. The type stays for relations and resolvers.
 - `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it.
-- A column or relation in `hidden` of the model is not a field. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.
+- A column or relation in `hidden` of the model is not a field. `hidden` uses the snake_case name of the column or relation, for example `password_hash`, not the Dart field name. If `visibleFields` of the model is not empty, only those names are fields. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.
 - `@GraphQLField()` on a getter makes a computed field.
 - Dox loads a relation for all parents of the request in one query. A relation that is already loaded runs no query.
 
@@ -114,7 +115,7 @@ Write a resolver when the automatic fields are not sufficient. Put the annotatio
 ```dart
 // lib/app/graphql/post.resolver.dart
 class PostResolver {
-  PostResolver(this.postService); // from the container
+  PostResolver(this.postService);
 
   final PostService postService;
 
@@ -135,6 +136,7 @@ class PostResolver {
 }
 ```
 
+- Dox gets the constructor values from the container (`info.context.make<T>()`). Put `@Inject()` on each class that the constructor takes.
 - The method name is the field name. The return type is the field type.
 - The parameters are the arguments. A parameter with a default value is optional.
 - A `@Dto` parameter is the input. Dox applies its rules before the method runs.
@@ -250,6 +252,7 @@ A field error has status 200 also. Always check `errors`.
 - `dto:` without `policy:`: the model then gets only the create mutation.
 - `@GraphQLType(auth: false)` on a model with `dto:` and no `owner:`. The create mutation is then public also. To make only reads public, keep the default and write a `@GraphQLQuery(auth: false)`, or use `owner:`.
 - A model with private data, for example `User`, without `auth: true`. A public type or an API without the auth middleware then shows it through relations.
+- `auth: true` as the only protection of private rows. It is a login check, not a policy check. The automatic queries and relations give all rows to each logged-in user. Use `queries: false`, your own `@GraphQLQuery`, and `hidden`.
 - A secret column that is not in `hidden` and has no `@GraphQLIgnore()`.
 - The owner column as a DTO field. The client must not send it. Use `owner:`.
 - A relation query in a loop in a resolver. Use `context.loader` with a `DataLoader`.
