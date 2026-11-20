@@ -1,0 +1,489 @@
+import 'package:dox_graphql/dox_graphql.dart';
+import 'package:gql/language.dart';
+import 'package:test/test.dart';
+
+// The test schema of the spec validation examples.
+final InterfaceType pet = InterfaceType(
+  'Pet',
+  fields: () => <Field<Object?, Object?>>[
+    Field<Object?, Object?>('name', graphqlString),
+  ],
+);
+
+final EnumType<String> dogCommand = EnumType<String>(
+  'DogCommand',
+  <EnumValue<String>>[
+    EnumValue<String>('SIT', 'SIT'),
+    EnumValue<String>('HEEL', 'HEEL'),
+    EnumValue<String>('DOWN', 'DOWN'),
+  ],
+);
+
+final ObjectType<Object?, Object?> dog = ObjectType<Object?, Object?>(
+  'Dog',
+  interfaces: <InterfaceType>[pet],
+  fields: () => <Field<Object?, Object?>>[
+    Field<Object?, Object?>('name', graphqlString),
+    Field<Object?, Object?>('nickname', graphqlString),
+    Field<Object?, Object?>('barkVolume', graphqlInt),
+    Field<Object?, Object?>('barks', graphqlBoolean),
+    Field<Object?, Object?>(
+      'doesKnowCommand',
+      graphqlBoolean,
+      args: <Argument>[Argument('dogCommand', dogCommand.nonNull)],
+    ),
+    Field<Object?, Object?>(
+      'isHouseTrained',
+      graphqlBoolean,
+      args: <Argument>[
+        Argument('atOtherHomes', graphqlBoolean, defaultValue: 'true'),
+      ],
+    ),
+    Field<Object?, Object?>('owner', human),
+  ],
+);
+
+final ObjectType<Object?, Object?> cat = ObjectType<Object?, Object?>(
+  'Cat',
+  interfaces: <InterfaceType>[pet],
+  fields: () => <Field<Object?, Object?>>[
+    Field<Object?, Object?>('name', graphqlString),
+    Field<Object?, Object?>('meows', graphqlBoolean),
+    Field<Object?, Object?>('meowVolume', graphqlInt),
+  ],
+);
+
+final ObjectType<Object?, Object?> human = ObjectType<Object?, Object?>(
+  'Human',
+  fields: () => <Field<Object?, Object?>>[
+    Field<Object?, Object?>('name', graphqlString),
+    Field<Object?, Object?>('pets', pet.list),
+    Field<Object?, Object?>('relatives', human.list),
+  ],
+);
+
+final UnionType catOrDog = UnionType('CatOrDog', <ObjectType<Object?, Object?>>[
+  cat,
+  dog,
+]);
+final UnionType dogOrHuman = UnionType(
+  'DogOrHuman',
+  <ObjectType<Object?, Object?>>[dog, human],
+);
+
+final InputObjectType complexInput = InputObjectType(
+  'ComplexInput',
+  fields: () => <InputField>[
+    InputField('requiredField', graphqlBoolean.nonNull),
+    InputField('nonNullField', graphqlBoolean.nonNull, defaultValue: 'false'),
+    InputField('intField', graphqlInt),
+    InputField('stringField', graphqlString),
+  ],
+);
+
+final ObjectType<Object?, Object?> complicatedArgs =
+    ObjectType<Object?, Object?>(
+      'ComplicatedArgs',
+      fields: () => <Field<Object?, Object?>>[
+        Field<Object?, Object?>(
+          'intArgField',
+          graphqlString,
+          args: <Argument>[Argument('intArg', graphqlInt)],
+        ),
+        Field<Object?, Object?>(
+          'nonNullIntArgField',
+          graphqlString,
+          args: <Argument>[Argument('nonNullIntArg', graphqlInt.nonNull)],
+        ),
+        Field<Object?, Object?>(
+          'stringListArgField',
+          graphqlString,
+          args: <Argument>[Argument('stringListArg', graphqlString.list)],
+        ),
+        Field<Object?, Object?>(
+          'complexArgField',
+          graphqlString,
+          args: <Argument>[Argument('complexArg', complexInput)],
+        ),
+        Field<Object?, Object?>(
+          'multipleReqs',
+          graphqlString,
+          args: <Argument>[
+            Argument('req1', graphqlInt.nonNull),
+            Argument('req2', graphqlInt.nonNull),
+          ],
+        ),
+        Field<Object?, Object?>(
+          'withDefault',
+          graphqlString,
+          args: <Argument>[
+            Argument('opt', graphqlInt.nonNull, defaultValue: '0'),
+          ],
+        ),
+        Field<Object?, Object?>(
+          'booleanArgField',
+          graphqlString,
+          args: <Argument>[Argument('booleanArg', graphqlBoolean)],
+        ),
+      ],
+    );
+
+final Schema<Object?> schema = Schema<Object?>(
+  query: ObjectType<Object?, Object?>(
+    'Query',
+    fields: () => <Field<Object?, Object?>>[
+      Field<Object?, Object?>('dog', dog),
+      Field<Object?, Object?>('cat', cat),
+      Field<Object?, Object?>('pet', pet),
+      Field<Object?, Object?>('catOrDog', catOrDog),
+      Field<Object?, Object?>('dogOrHuman', dogOrHuman),
+      Field<Object?, Object?>(
+        'human',
+        human,
+        args: <Argument>[Argument('id', graphqlId)],
+      ),
+      Field<Object?, Object?>('complicatedArgs', complicatedArgs),
+    ],
+  ),
+);
+
+final GraphQLExecutor<Object?> executor = GraphQLExecutor<Object?>(schema);
+
+List<String> errorsOf(String query, [GraphQLExecutor<Object?>? e]) => <String>[
+  for (GraphQLError err in (e ?? executor).validate(parseString(query)))
+    err.message,
+];
+
+void valid(String query) => expect(errorsOf(query), isEmpty, reason: query);
+
+void invalid(String query, List<String> messages) =>
+    expect(errorsOf(query), messages, reason: query);
+
+void main() {
+  test('executable definitions', () {
+    invalid('{ dog { name } } type Cow { name: String }', <String>[
+      'The "Cow" definition is not executable.',
+    ]);
+  });
+
+  test('operation names and anonymous operations', () {
+    valid('query A { dog { name } } query B { cat { name } }');
+    invalid('query A { dog { name } } query A { cat { name } }', <String>[
+      'There can be only one operation named "A".',
+    ]);
+    invalid('{ dog { name } } query B { cat { name } }', <String>[
+      'This anonymous operation must be the only defined operation.',
+    ]);
+    invalid('mutation { dog }', <String>[
+      'Schema is not configured for mutations.',
+    ]);
+  });
+
+  test('fields on correct type', () {
+    valid('{ dog { name __typename } catOrDog { __typename } }');
+    invalid('{ dog { meowVolume } }', <String>[
+      'Cannot query field "meowVolume" on type "Dog".',
+    ]);
+    invalid('{ catOrDog { name } }', <String>[
+      'Cannot query field "name" on type "CatOrDog".',
+    ]);
+    invalid('{ dog { __schema { types { name } } } }', <String>[
+      'Cannot query field "__schema" on type "Dog".',
+    ]);
+  });
+
+  test('leaf field selections', () {
+    invalid('{ dog { barks { sinceWhen } } }', <String>[
+      'Field "barks" must not have a selection since type "Boolean" has no '
+          'subfields.',
+    ]);
+    invalid('{ human }', <String>[
+      'Field "human" of type "Human" must have a selection of subfields. '
+          'Did you mean "human { ... }"?',
+    ]);
+  });
+
+  test('arguments: known, unique, required', () {
+    valid('{ dog { doesKnowCommand(dogCommand: SIT) } }');
+    valid('{ dog { isHouseTrained } }');
+    valid('{ complicatedArgs { withDefault } }');
+    invalid(
+      '{ dog { doesKnowCommand(command: SIT, dogCommand: SIT) } }',
+      <String>['Unknown argument "command" on field "Dog.doesKnowCommand".'],
+    );
+    invalid(
+      '{ dog { doesKnowCommand(dogCommand: SIT, dogCommand: HEEL) } }',
+      <String>['There can be only one argument named "dogCommand".'],
+    );
+    invalid('{ complicatedArgs { multipleReqs(req1: 1) } }', <String>[
+      'Field "multipleReqs" argument "req2" of type "Int!" is required, but '
+          'it was not provided.',
+    ]);
+    invalid('{ dog { name @include } }', <String>[
+      'Directive "@include" argument "if" of type "Boolean!" is required, '
+          'but it was not provided.',
+    ]);
+  });
+
+  test('fragments: unique, known, used, on composite types', () {
+    invalid(
+      '{ dog { ...F } } fragment F on Dog { name } fragment F on Dog { name }',
+      <String>['There can be only one fragment named "F".'],
+    );
+    invalid('{ dog { ...Nope } }', <String>['Unknown fragment "Nope".']);
+    invalid('{ dog { name } } fragment F on Dog { name }', <String>[
+      'Fragment "F" is never used.',
+    ]);
+    invalid('{ dog { ...F } } fragment F on NotInSchema { name }', <String>[
+      'Unknown type "NotInSchema".',
+    ]);
+    invalid('{ dog { ... on Boolean { x } } }', <String>[
+      'Fragment cannot condition on non composite type "Boolean".',
+    ]);
+    invalid('{ dog { ...F } } fragment F on Int { x }', <String>[
+      'Fragment "F" cannot condition on non composite type "Int".',
+    ]);
+  });
+
+  test('fragment cycles', () {
+    invalid(
+      '{ dog { ...A } } fragment A on Dog { ...B } fragment B on Dog { ...A }',
+      <String>['Cannot spread fragment "A" within itself via B.'],
+    );
+    invalid(
+      '{ dog { ...A } } fragment A on Dog { owner { pets { ...P } } ...A } '
+      'fragment P on Pet { name }',
+      <String>['Cannot spread fragment "A" within itself.'],
+    );
+  });
+
+  test('possible fragment spreads', () {
+    valid('{ pet { ... on Dog { barks } ... on CatOrDog { __typename } } }');
+    valid('{ dogOrHuman { ... on Pet { name } } }');
+    invalid('{ dog { ... on Cat { meows } } }', <String>[
+      'Fragment cannot be spread here as objects of type "Dog" can never be '
+          'of type "Cat".',
+    ]);
+    invalid('{ human { ...P } } fragment P on Pet { name }', <String>[
+      'Fragment "P" cannot be spread here as objects of type "Human" can '
+          'never be of type "Pet".',
+    ]);
+    invalid(
+      '{ catOrDog { ... on DogOrHuman { __typename } } cat { ... on DogOrHuman { __typename } } }',
+      <String>[
+        'Fragment cannot be spread here as objects of type "Cat" can never be '
+            'of type "DogOrHuman".',
+      ],
+    );
+  });
+
+  test('values of correct type', () {
+    valid('{ complicatedArgs { intArgField(intArg: 2) } }');
+    valid('{ complicatedArgs { stringListArgField(stringListArg: "one") } }');
+    valid(
+      '{ complicatedArgs { complexArgField(complexArg: {requiredField: true}) } }',
+    );
+    invalid('{ complicatedArgs { intArgField(intArg: "3") } }', <String>[
+      'Expected value of type "Int", found "3"; Int cannot represent '
+          'non-integer value: "3"',
+    ]);
+    invalid('{ complicatedArgs { intArgField(intArg: 3000000000) } }', <String>[
+      'Expected value of type "Int", found 3000000000; Int cannot represent '
+          'non 32-bit signed integer value: 3000000000',
+    ]);
+    invalid(
+      '{ complicatedArgs { nonNullIntArgField(nonNullIntArg: null) } }',
+      <String>['Expected value of type "Int!", found null.'],
+    );
+    invalid('{ dog { doesKnowCommand(dogCommand: JUMP) } }', <String>[
+      'Value "JUMP" does not exist in "DogCommand" enum.',
+    ]);
+    invalid('{ dog { doesKnowCommand(dogCommand: "SIT") } }', <String>[
+      'Enum "DogCommand" cannot represent non-enum value: "SIT".',
+    ]);
+    invalid(
+      '{ complicatedArgs { complexArgField(complexArg: {intField: 4}) } }',
+      <String>[
+        'Field "ComplexInput.requiredField" of required type "Boolean!" was '
+            'not provided.',
+      ],
+    );
+    invalid(
+      '{ complicatedArgs { complexArgField(complexArg: {requiredField: true, nope: 1}) } }',
+      <String>['Field "nope" is not defined by type "ComplexInput".'],
+    );
+    invalid(
+      '{ complicatedArgs { complexArgField(complexArg: {requiredField: true, requiredField: false}) } }',
+      <String>['There can be only one input field named "requiredField".'],
+    );
+  });
+
+  test('directives', () {
+    valid('{ dog { name @skip(if: true) } }');
+    invalid('{ dog { name @nope } }', <String>['Unknown directive "@nope".']);
+    invalid('query @skip(if: true) { dog { name } }', <String>[
+      'Directive "@skip" may not be used on QUERY.',
+    ]);
+    invalid('{ dog { name @skip(if: true) @skip(if: false) } }', <String>[
+      'The directive "@skip" can only be used once at this location.',
+    ]);
+  });
+
+  test('variables: unique, input types, defined, used', () {
+    invalid(
+      r'query ($a: Int, $a: Int) { complicatedArgs { intArgField(intArg: $a) } }',
+      <String>[r'There can be only one variable named "$a".'],
+    );
+    invalid(r'query ($a: Dog) { dog { name } }', <String>[
+      r'Variable "$a" cannot be non-input type "Dog".',
+      r'Variable "$a" is never used.',
+    ]);
+    invalid(r'query ($a: Nope) { dog { name } }', <String>[
+      'Unknown type "Nope".',
+      r'Variable "$a" is never used.',
+    ]);
+    invalid(
+      r'query Q { complicatedArgs { intArgField(intArg: $x) } }',
+      <String>[r'Variable "$x" is not defined by operation "Q".'],
+    );
+    invalid(r'query Q($x: Int) { dog { name } }', <String>[
+      r'Variable "$x" is never used in operation "Q".',
+    ]);
+    // A variable used only in a fragment counts.
+    valid(r'''
+      query Q($x: Int) { complicatedArgs { ...F } }
+      fragment F on ComplicatedArgs { intArgField(intArg: $x) }
+    ''');
+    invalid(
+      r'''
+      query A($x: Int) { complicatedArgs { ...F } }
+      query B { complicatedArgs { ...F } }
+      fragment F on ComplicatedArgs { intArgField(intArg: $x) }
+    ''',
+      <String>[r'Variable "$x" is not defined by operation "B".'],
+    );
+  });
+
+  test('variables in allowed positions', () {
+    valid(
+      r'query ($b: Boolean!) { complicatedArgs { booleanArgField(booleanArg: $b) } }',
+    );
+    valid(
+      r'query ($i: Int = 1) { complicatedArgs { nonNullIntArgField(nonNullIntArg: $i) } }',
+    );
+    valid(r'query ($i: Int) { complicatedArgs { withDefault(opt: $i) } }');
+    valid(
+      r'query ($s: String) { complicatedArgs { stringListArgField(stringListArg: [$s]) } }',
+    );
+    invalid(
+      r'query ($i: Int) { complicatedArgs { nonNullIntArgField(nonNullIntArg: $i) } }',
+      <String>[
+        r'Variable "$i" of type "Int" used in position expecting type "Int!".',
+      ],
+    );
+    invalid(
+      r'query ($s: String) { complicatedArgs { intArgField(intArg: $s) } }',
+      <String>[
+        r'Variable "$s" of type "String" used in position expecting type "Int".',
+      ],
+    );
+    invalid(
+      r'query ($s: [String]) { complicatedArgs { stringListArgField(stringListArg: [$s]) } }',
+      <String>[
+        r'Variable "$s" of type "[String]" used in position expecting type "String".',
+      ],
+    );
+    invalid(r'query ($b: Boolean) { dog { name @skip(if: $b) } }', <String>[
+      r'Variable "$b" of type "Boolean" used in position expecting type "Boolean!".',
+    ]);
+  });
+
+  test('overlapping fields can be merged', () {
+    valid('{ dog { name name } }');
+    valid('{ dog { n: name ...F } } fragment F on Dog { n: name }');
+    valid(
+      '{ dog { doesKnowCommand(dogCommand: SIT) doesKnowCommand(dogCommand: SIT) } }',
+    );
+    // Different object parents can never be the same value.
+    valid(
+      '{ pet { ... on Dog { x: barkVolume } ... on Cat { x: meowVolume } } }',
+    );
+    invalid('{ dog { x: name x: nickname } }', <String>[
+      'Fields "x" conflict because "name" and "nickname" are different '
+          'fields. Use different aliases on the fields to fetch both if this '
+          'was intentional.',
+    ]);
+    invalid(
+      '{ dog { doesKnowCommand(dogCommand: SIT) doesKnowCommand(dogCommand: HEEL) } }',
+      <String>[
+        'Fields "doesKnowCommand" conflict because they have differing '
+            'arguments. Use different aliases on the fields to fetch both if '
+            'this was intentional.',
+      ],
+    );
+    invalid(
+      '{ pet { ... on Dog { x: barkVolume } ... on Cat { x: meows } } }',
+      <String>[
+        'Fields "x" conflict because they return conflicting types "Int" and '
+            '"Boolean". Use different aliases on the fields to fetch both if '
+            'this was intentional.',
+      ],
+    );
+    invalid(
+      '{ dog { owner { x: name } owner { x: relatives { name } } } }',
+      <String>[
+        'Fields "x" conflict because "name" and "relatives" are different '
+            'fields. Use different aliases on the fields to fetch both if this '
+            'was intentional.',
+      ],
+    );
+    invalid(
+      '{ dog { ...F name: nickname } } fragment F on Dog { name }',
+      <String>[
+        'Fields "name" conflict because "name" and "nickname" are different '
+            'fields. Use different aliases on the fields to fetch both if this '
+            'was intentional.',
+      ],
+    );
+  });
+
+  test('extra rules run after the spec rules', () {
+    GraphQLExecutor<Object?> e = GraphQLExecutor<Object?>(
+      schema,
+      rules: <ValidationRule>[const _MaxTopFields(1)],
+    );
+    expect(errorsOf('{ dog { name } }', e), isEmpty);
+    expect(errorsOf('{ dog { name } cat { name } }', e), <String>[
+      'Too many fields.',
+    ]);
+    // Not run when the spec rules fail.
+    expect(errorsOf('{ dog { nope } cat { name } }', e), <String>[
+      'Cannot query field "nope" on type "Dog".',
+    ]);
+  });
+
+  test('introspection switch', () {
+    GraphQLExecutor<Object?> off = GraphQLExecutor<Object?>(
+      schema,
+      introspection: false,
+    );
+    expect(errorsOf('{ __schema { types { name } } }', off), <String>[
+      'GraphQL introspection has been disabled, but the requested query '
+          'contained the field "__schema".',
+    ]);
+    expect(errorsOf('{ dog { __typename } }', off), isEmpty);
+  });
+}
+
+class _MaxTopFields implements ValidationRule {
+  const _MaxTopFields(this.max);
+
+  final int max;
+
+  @override
+  List<GraphQLError> validate(ValidationContext context) => <GraphQLError>[
+    for (OperationDefinitionNode op in context.operations)
+      if (op.selectionSet.selections.length > max)
+        GraphQLError.at('Too many fields.', <Node>[op]),
+  ];
+}

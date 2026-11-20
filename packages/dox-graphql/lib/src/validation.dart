@@ -1,0 +1,871 @@
+import 'package:gql/ast.dart';
+import 'package:gql/language.dart';
+import 'package:meta/meta.dart';
+
+import 'errors.dart';
+import 'introspection.dart';
+import 'schema.dart';
+import 'types.dart';
+import 'values.dart';
+
+/// An extra check of a query document. It runs after the built-in spec
+/// rules, and only when they pass. Use it for limits like max depth.
+abstract interface class ValidationRule {
+  List<GraphQLError> validate(ValidationContext context);
+}
+
+/// What a [ValidationRule] can look at.
+final class ValidationContext {
+  @internal
+  ValidationContext(this.schema, this.document)
+    : operations = <OperationDefinitionNode>[
+        for (DefinitionNode d in document.definitions)
+          if (d is OperationDefinitionNode) d,
+      ],
+      fragments = <String, FragmentDefinitionNode>{
+        for (DefinitionNode d in document.definitions)
+          if (d is FragmentDefinitionNode) d.name.value: d,
+      };
+
+  final Schema<Object?> schema;
+  final DocumentNode document;
+  final List<OperationDefinitionNode> operations;
+  final Map<String, FragmentDefinitionNode> fragments;
+}
+
+/// Rejects `__schema` and `__type`. The executor adds it when
+/// introspection is off. `__typename` still works.
+final class NoIntrospectionRule implements ValidationRule {
+  const NoIntrospectionRule();
+
+  @override
+  List<GraphQLError> validate(ValidationContext context) {
+    List<GraphQLError> errors = <GraphQLError>[];
+    for (DefinitionNode d in context.document.definitions) {
+      if (d is OperationDefinitionNode) _walk(d.selectionSet, errors);
+      if (d is FragmentDefinitionNode) _walk(d.selectionSet, errors);
+    }
+    return errors;
+  }
+
+  void _walk(SelectionSetNode set, List<GraphQLError> errors) {
+    for (SelectionNode s in set.selections) {
+      switch (s) {
+        case FieldNode():
+          String name = s.name.value;
+          if (name == '__schema' || name == '__type') {
+            errors.add(
+              GraphQLError.at(
+                'GraphQL introspection has been disabled, but the requested '
+                'query contained the field "$name".',
+                <Node>[s],
+              ),
+            );
+          }
+          SelectionSetNode? sub = s.selectionSet;
+          if (sub != null) _walk(sub, errors);
+        case InlineFragmentNode():
+          _walk(s.selectionSet, errors);
+        default:
+          break;
+      }
+    }
+  }
+}
+
+final class _VariableUsage {
+  _VariableUsage(this.node, this.type, this.hasDefault);
+
+  final VariableNode node;
+  final GraphQLType? type;
+  final bool hasDefault;
+}
+
+/// What one operation or fragment uses.
+final class _DefinitionUses {
+  final List<FragmentSpreadNode> spreads = <FragmentSpreadNode>[];
+  final List<_VariableUsage> variables = <_VariableUsage>[];
+}
+
+/// Runs the validation rules of the spec on a document, in one walk.
+@internal
+final class DocumentValidator {
+  DocumentValidator(this.schema, this.document);
+
+  final Schema<Object?> schema;
+  final DocumentNode document;
+  final List<GraphQLError> errors = <GraphQLError>[];
+  final Map<String, FragmentDefinitionNode> _fragments =
+      <String, FragmentDefinitionNode>{};
+  final Map<String, _DefinitionUses> _fragmentUses =
+      <String, _DefinitionUses>{};
+  _DefinitionUses _uses = _DefinitionUses();
+
+  void _error(String message, List<Node> nodes) {
+    errors.add(GraphQLError.at(message, nodes));
+  }
+
+  List<GraphQLError> validate() {
+    List<OperationDefinitionNode> operations = <OperationDefinitionNode>[];
+    for (DefinitionNode d in document.definitions) {
+      switch (d) {
+        case OperationDefinitionNode():
+          operations.add(d);
+        case FragmentDefinitionNode():
+          String name = d.name.value;
+          if (_fragments.containsKey(name)) {
+            _error('There can be only one fragment named "$name".', <Node>[
+              _fragments[name]!,
+              d,
+            ]);
+          } else {
+            _fragments[name] = d;
+          }
+        default:
+          _error(
+            'The "${_definitionName(d)}" definition is not executable.',
+            <Node>[d],
+          );
+      }
+    }
+
+    Map<String, OperationDefinitionNode> names =
+        <String, OperationDefinitionNode>{};
+    for (OperationDefinitionNode op in operations) {
+      String? name = op.name?.value;
+      if (name == null) {
+        if (operations.length > 1) {
+          _error(
+            'This anonymous operation must be the only defined operation.',
+            <Node>[op],
+          );
+        }
+      } else if (names.containsKey(name)) {
+        _error('There can be only one operation named "$name".', <Node>[
+          names[name]!,
+          op,
+        ]);
+      } else {
+        names[name] = op;
+      }
+    }
+
+    Map<OperationDefinitionNode, _DefinitionUses> opUses =
+        Map<OperationDefinitionNode, _DefinitionUses>.identity();
+    for (OperationDefinitionNode op in operations) {
+      _uses = opUses[op] = _DefinitionUses();
+      _operation(op);
+    }
+    for (FragmentDefinitionNode f in _fragments.values) {
+      _uses = _fragmentUses[f.name.value] = _DefinitionUses();
+      _fragment(f);
+    }
+
+    _checkFragmentUse(opUses);
+    _checkFragmentCycles();
+    for (OperationDefinitionNode op in operations) {
+      _checkVariables(op, opUses[op]!);
+    }
+    _OverlapChecker(schema, _fragments, errors).checkDocument(document);
+    return errors;
+  }
+
+  static String _definitionName(DefinitionNode d) => switch (d) {
+    TypeDefinitionNode() => d.name.value,
+    TypeExtensionNode() => d.name.value,
+    DirectiveDefinitionNode() => d.name.value,
+    _ => 'schema',
+  };
+
+  void _operation(OperationDefinitionNode op) {
+    ObjectType<Object?, Object?>? root = schema.rootType(op.type);
+    if (root == null) {
+      _error('Schema is not configured for ${op.type.name}s.', <Node>[op]);
+    }
+    Set<String> varNames = <String>{};
+    for (VariableDefinitionNode def in op.variableDefinitions) {
+      String name = def.variable.name.value;
+      if (!varNames.add(name)) {
+        _error('There can be only one variable named "\$$name".', <Node>[def]);
+      }
+      GraphQLType? type = _typeOf(def.type);
+      if (type != null && !type.isInputType) {
+        _error(
+          'Variable "\$$name" cannot be non-input type '
+          '"${printNode(def.type)}".',
+          <Node>[def.type],
+        );
+        type = null;
+      }
+      ValueNode? defaultValue = def.defaultValue?.value;
+      if (defaultValue != null && type != null) {
+        _value(defaultValue, type, false);
+      }
+      _directives(def.directives, DirectiveLocation.variableDefinition);
+    }
+    _directives(op.directives, switch (op.type) {
+      OperationType.query => DirectiveLocation.query,
+      OperationType.mutation => DirectiveLocation.mutation,
+      OperationType.subscription => DirectiveLocation.subscription,
+    });
+    _selections(op.selectionSet, root);
+  }
+
+  /// The type of a type node. Reports unknown names.
+  GraphQLType? _typeOf(TypeNode node) {
+    NamedTypeNode named = _namedNode(node);
+    if (schema.type(named.name.value) == null) {
+      _error('Unknown type "${named.name.value}".', <Node>[named]);
+      return null;
+    }
+    return Values.typeFromAst(schema, node);
+  }
+
+  static NamedTypeNode _namedNode(TypeNode node) => switch (node) {
+    NamedTypeNode() => node,
+    ListTypeNode() => _namedNode(node.type),
+    _ => throw StateError('Unknown type node $node'),
+  };
+
+  void _fragment(FragmentDefinitionNode f) {
+    NamedTypeNode on = f.typeCondition.on;
+    NamedType? type = schema.type(on.name.value);
+    if (type == null) {
+      _error('Unknown type "${on.name.value}".', <Node>[on]);
+    } else if (!type.isComposite) {
+      _error(
+        'Fragment "${f.name.value}" cannot condition on non composite type '
+        '"${type.name}".',
+        <Node>[on],
+      );
+      type = null;
+    }
+    _directives(f.directives, DirectiveLocation.fragmentDefinition);
+    _selections(f.selectionSet, type);
+  }
+
+  bool _overlap(NamedType a, NamedType b) {
+    if (identical(a, b)) return true;
+    List<ObjectType<Object?, Object?>> pb = schema.possibleTypes(b);
+    return schema
+        .possibleTypes(a)
+        .any(
+          (ObjectType<Object?, Object?> t) =>
+              pb.any((ObjectType<Object?, Object?> u) => identical(t, u)),
+        );
+  }
+
+  void _selections(SelectionSetNode set, NamedType? parent) {
+    for (SelectionNode s in set.selections) {
+      switch (s) {
+        case FieldNode():
+          _field(s, parent);
+        case InlineFragmentNode():
+          NamedType? type = parent;
+          NamedTypeNode? on = s.typeCondition?.on;
+          if (on != null) {
+            type = schema.type(on.name.value);
+            if (type == null) {
+              _error('Unknown type "${on.name.value}".', <Node>[on]);
+            } else if (!type.isComposite) {
+              _error(
+                'Fragment cannot condition on non composite type '
+                '"${type.name}".',
+                <Node>[on],
+              );
+              type = null;
+            } else if (parent != null && !_overlap(parent, type)) {
+              _error(
+                'Fragment cannot be spread here as objects of type '
+                '"${parent.name}" can never be of type "${type.name}".',
+                <Node>[s],
+              );
+            }
+          }
+          _directives(s.directives, DirectiveLocation.inlineFragment);
+          _selections(s.selectionSet, type);
+        case FragmentSpreadNode():
+          _uses.spreads.add(s);
+          String name = s.name.value;
+          FragmentDefinitionNode? f = _fragments[name];
+          if (f == null) {
+            _error('Unknown fragment "$name".', <Node>[s]);
+          } else {
+            NamedType? type = schema.type(f.typeCondition.on.name.value);
+            if (type != null &&
+                type.isComposite &&
+                parent != null &&
+                !_overlap(parent, type)) {
+              _error(
+                'Fragment "$name" cannot be spread here as objects of type '
+                '"${parent.name}" can never be of type "${type.name}".',
+                <Node>[s],
+              );
+            }
+          }
+          _directives(s.directives, DirectiveLocation.fragmentSpread);
+        default:
+          break;
+      }
+    }
+  }
+
+  void _field(FieldNode node, NamedType? parent) {
+    String name = node.name.value;
+    Field<Object?, Object?>? def = parent == null
+        ? null
+        : schema.field(parent, name);
+    if (parent != null && def == null) {
+      _error('Cannot query field "$name" on type "${parent.name}".', <Node>[
+        node,
+      ]);
+    }
+    _arguments(
+      node.arguments,
+      def?.args,
+      unknownOn: 'field "${parent?.name}.$name"',
+      requiredOf: 'Field "$name"',
+      owner: node,
+    );
+    _directives(node.directives, DirectiveLocation.field);
+    SelectionSetNode? sub = node.selectionSet;
+    NamedType? subType;
+    if (def != null) {
+      NamedType named = def.type.namedType;
+      if (named.isLeaf && sub != null) {
+        _error(
+          'Field "$name" must not have a selection since type '
+          '"${def.type}" has no subfields.',
+          <Node>[node],
+        );
+      } else if (!named.isLeaf && sub == null) {
+        _error(
+          'Field "$name" of type "${def.type}" must have a selection of '
+          'subfields. Did you mean "$name { ... }"?',
+          <Node>[node],
+        );
+      }
+      if (named.isComposite) subType = named;
+    }
+    if (sub != null) _selections(sub, subType);
+  }
+
+  void _arguments(
+    List<ArgumentNode> nodes,
+    List<Argument>? defs, {
+    required String unknownOn,
+    required String requiredOf,
+    required Node owner,
+  }) {
+    Set<String> seen = <String>{};
+    for (ArgumentNode n in nodes) {
+      String name = n.name.value;
+      if (!seen.add(name)) {
+        _error('There can be only one argument named "$name".', <Node>[n]);
+      }
+      Argument? def;
+      for (Argument a in defs ?? const <Argument>[]) {
+        if (a.name == name) def = a;
+      }
+      if (defs != null && def == null) {
+        _error('Unknown argument "$name" on $unknownOn.', <Node>[n]);
+      }
+      _value(n.value, def?.type, def?.defaultValue != null);
+    }
+    for (Argument a in defs ?? const <Argument>[]) {
+      if (a.isRequired && !seen.contains(a.name)) {
+        _error(
+          '$requiredOf argument "${a.name}" of type "${a.type}" is required, '
+          'but it was not provided.',
+          <Node>[owner],
+        );
+      }
+    }
+  }
+
+  void _directives(List<DirectiveNode> nodes, DirectiveLocation location) {
+    Set<String> seen = <String>{};
+    for (DirectiveNode n in nodes) {
+      String name = n.name.value;
+      Directive? def = schema.directive(name);
+      if (def == null) {
+        _error('Unknown directive "@$name".', <Node>[n]);
+        for (ArgumentNode a in n.arguments) {
+          _value(a.value, null, false);
+        }
+        continue;
+      }
+      if (!def.locations.contains(location)) {
+        _error(
+          'Directive "@$name" may not be used on '
+          '${Introspection.locationName(location)}.',
+          <Node>[n],
+        );
+      }
+      if (!def.isRepeatable && !seen.add(name)) {
+        _error(
+          'The directive "@$name" can only be used once at this location.',
+          <Node>[n],
+        );
+      }
+      _arguments(
+        n.arguments,
+        def.args,
+        unknownOn: 'directive "@$name"',
+        requiredOf: 'Directive "@$name"',
+        owner: n,
+      );
+    }
+  }
+
+  /// Checks a value against its expected type. A null type means the place
+  /// is not known; then only variable uses are noted.
+  void _value(ValueNode node, GraphQLType? type, bool hasDefault) {
+    if (node is VariableNode) {
+      _uses.variables.add(_VariableUsage(node, type, hasDefault));
+      return;
+    }
+    if (type == null) {
+      if (node is ListValueNode) {
+        for (ValueNode v in node.values) {
+          _value(v, null, false);
+        }
+      } else if (node is ObjectValueNode) {
+        for (ObjectFieldNode f in node.fields) {
+          _value(f.value, null, false);
+        }
+      }
+      return;
+    }
+    if (type is NonNullType) {
+      if (node is NullValueNode) {
+        _error('Expected value of type "$type", found null.', <Node>[node]);
+        return;
+      }
+      _value(node, type.ofType, hasDefault);
+      return;
+    }
+    if (node is NullValueNode) return;
+    switch (type) {
+      case ListType():
+        if (node is ListValueNode) {
+          for (ValueNode v in node.values) {
+            _value(v, type.ofType, false);
+          }
+        } else {
+          _value(node, type.ofType, false);
+        }
+      case InputObjectType():
+        if (node is! ObjectValueNode) {
+          _error(
+            'Expected value of type "${type.name}", found ${printNode(node)}.',
+            <Node>[node],
+          );
+          _value(node, null, false);
+          return;
+        }
+        Set<String> seen = <String>{};
+        for (ObjectFieldNode f in node.fields) {
+          String name = f.name.value;
+          if (!seen.add(name)) {
+            _error('There can be only one input field named "$name".', <Node>[
+              f,
+            ]);
+          }
+          InputField? def = type.field(name);
+          if (def == null) {
+            _error(
+              'Field "$name" is not defined by type "${type.name}".',
+              <Node>[f],
+            );
+          }
+          _value(f.value, def?.type, def?.defaultValue != null);
+        }
+        for (InputField def in type.fields) {
+          if (def.isRequired && !seen.contains(def.name)) {
+            _error(
+              'Field "${type.name}.${def.name}" of required type '
+              '"${def.type}" was not provided.',
+              <Node>[node],
+            );
+          }
+        }
+      case EnumType<Object?>():
+        if (node is! EnumValueNode) {
+          _error(
+            'Enum "${type.name}" cannot represent non-enum value: '
+            '${printNode(node)}.',
+            <Node>[node],
+          );
+        } else if (type.valueNamed(node.name.value) == null) {
+          _error(
+            'Value "${node.name.value}" does not exist in "${type.name}" '
+            'enum.',
+            <Node>[node],
+          );
+        }
+      case ScalarType<Object>():
+        try {
+          type.parseLiteral(node);
+        } on GraphQLError catch (e) {
+          _error(
+            'Expected value of type "${type.name}", found '
+            '${printNode(node)}; ${e.message}',
+            <Node>[node],
+          );
+        } on Object {
+          _error(
+            'Expected value of type "${type.name}", found '
+            '${printNode(node)}.',
+            <Node>[node],
+          );
+        }
+      default:
+        break;
+    }
+  }
+
+  /// The fragments that an operation or fragment reaches, without itself.
+  Set<String> _reachable(_DefinitionUses uses) {
+    Set<String> out = <String>{};
+    List<_DefinitionUses> todo = <_DefinitionUses>[uses];
+    while (todo.isNotEmpty) {
+      for (FragmentSpreadNode s in todo.removeLast().spreads) {
+        String name = s.name.value;
+        _DefinitionUses? next = _fragmentUses[name];
+        if (next != null && out.add(name)) todo.add(next);
+      }
+    }
+    return out;
+  }
+
+  void _checkFragmentUse(Map<OperationDefinitionNode, _DefinitionUses> ops) {
+    Set<String> used = <String>{};
+    for (_DefinitionUses uses in ops.values) {
+      used.addAll(_reachable(uses));
+    }
+    for (FragmentDefinitionNode f in _fragments.values) {
+      if (!used.contains(f.name.value)) {
+        _error('Fragment "${f.name.value}" is never used.', <Node>[f]);
+      }
+    }
+  }
+
+  void _checkFragmentCycles() {
+    Set<String> visited = <String>{};
+    List<FragmentSpreadNode> path = <FragmentSpreadNode>[];
+    Map<String, int> pathIndex = <String, int>{};
+
+    void detect(String name) {
+      if (!visited.add(name)) return;
+      List<FragmentSpreadNode> spreads =
+          _fragmentUses[name]?.spreads ?? const <FragmentSpreadNode>[];
+      if (spreads.isEmpty) return;
+      pathIndex[name] = path.length;
+      for (FragmentSpreadNode s in spreads) {
+        String next = s.name.value;
+        int? index = pathIndex[next];
+        path.add(s);
+        if (index == null) {
+          if (_fragments.containsKey(next)) detect(next);
+        } else {
+          List<FragmentSpreadNode> cycle = path.sublist(index);
+          List<String> via = <String>[
+            for (FragmentSpreadNode c in cycle.sublist(0, cycle.length - 1))
+              c.name.value,
+          ];
+          _error(
+            'Cannot spread fragment "$next" within itself'
+            '${via.isEmpty ? '' : ' via ${via.join(', ')}'}.',
+            cycle,
+          );
+        }
+        path.removeLast();
+      }
+      pathIndex.remove(name);
+    }
+
+    for (String name in _fragments.keys) {
+      detect(name);
+    }
+  }
+
+  void _checkVariables(OperationDefinitionNode op, _DefinitionUses uses) {
+    String? opName = op.name?.value;
+    Map<String, VariableDefinitionNode> defs = <String, VariableDefinitionNode>{
+      for (VariableDefinitionNode d in op.variableDefinitions)
+        d.variable.name.value: d,
+    };
+    List<_VariableUsage> usages = <_VariableUsage>[
+      ...uses.variables,
+      for (String f in _reachable(uses)) ...?_fragmentUses[f]?.variables,
+    ];
+    Set<String> used = <String>{};
+    for (_VariableUsage u in usages) {
+      String name = u.node.name.value;
+      used.add(name);
+      VariableDefinitionNode? def = defs[name];
+      if (def == null) {
+        _error(
+          opName == null
+              ? 'Variable "\$$name" is not defined.'
+              : 'Variable "\$$name" is not defined by operation "$opName".',
+          <Node>[u.node, op],
+        );
+        continue;
+      }
+      GraphQLType? location = u.type;
+      GraphQLType? varType = Values.typeFromAst(schema, def.type);
+      if (location == null || varType == null || !varType.isInputType) {
+        continue;
+      }
+      if (!_allowed(varType, def, location, u.hasDefault)) {
+        _error(
+          'Variable "\$$name" of type "$varType" used in position expecting '
+          'type "$location".',
+          <Node>[def, u.node],
+        );
+      }
+    }
+    for (VariableDefinitionNode d in op.variableDefinitions) {
+      String name = d.variable.name.value;
+      if (!used.contains(name)) {
+        _error(
+          opName == null
+              ? 'Variable "\$$name" is never used.'
+              : 'Variable "\$$name" is never used in operation "$opName".',
+          <Node>[d],
+        );
+      }
+    }
+  }
+
+  bool _allowed(
+    GraphQLType varType,
+    VariableDefinitionNode def,
+    GraphQLType location,
+    bool locationHasDefault,
+  ) {
+    if (location is NonNullType && varType is! NonNullType) {
+      ValueNode? d = def.defaultValue?.value;
+      bool varHasDefault = d != null && d is! NullValueNode;
+      if (!varHasDefault && !locationHasDefault) return false;
+      return _compatible(varType, location.ofType);
+    }
+    return _compatible(varType, location);
+  }
+
+  bool _compatible(GraphQLType v, GraphQLType l) {
+    if (l is NonNullType) {
+      return v is NonNullType && _compatible(v.ofType, l.ofType);
+    }
+    if (v is NonNullType) return _compatible(v.ofType, l);
+    if (l is ListType) return v is ListType && _compatible(v.ofType, l.ofType);
+    if (v is ListType) return false;
+    return identical(v, l);
+  }
+}
+
+final class _FieldEntry {
+  _FieldEntry(this.parent, this.node, this.def);
+
+  final NamedType? parent;
+  final FieldNode node;
+  final Field<Object?, Object?>? def;
+}
+
+/// The "overlapping fields can be merged" rule: two fields with the same
+/// response name must give one unambiguous value.
+final class _OverlapChecker {
+  _OverlapChecker(this.schema, this.fragments, this.errors);
+
+  final Schema<Object?> schema;
+  final Map<String, FragmentDefinitionNode> fragments;
+  final List<GraphQLError> errors;
+
+  /// Pairs already compared, as exclusive or not.
+  final Map<FieldNode, Set<FieldNode>> _done =
+      Map<FieldNode, Set<FieldNode>>.identity();
+  final Map<FieldNode, Set<FieldNode>> _doneExclusive =
+      Map<FieldNode, Set<FieldNode>>.identity();
+
+  void checkDocument(DocumentNode document) {
+    for (DefinitionNode d in document.definitions) {
+      if (d is OperationDefinitionNode) {
+        _visit(d.selectionSet, schema.rootType(d.type));
+      } else if (d is FragmentDefinitionNode) {
+        _visit(d.selectionSet, _composite(d.typeCondition.on.name.value));
+      }
+    }
+  }
+
+  NamedType? _composite(String name) {
+    NamedType? t = schema.type(name);
+    return t != null && t.isComposite ? t : null;
+  }
+
+  NamedType? _subType(_FieldEntry e) {
+    NamedType? t = e.def?.type.namedType;
+    return t != null && t.isComposite ? t : null;
+  }
+
+  void _visit(SelectionSetNode set, NamedType? parent) {
+    Map<String, List<_FieldEntry>> fields = _collect(set, parent);
+    for (List<_FieldEntry> list in fields.values) {
+      for (int i = 0; i < list.length; i++) {
+        for (int j = i + 1; j < list.length; j++) {
+          _pair(list[i], list[j], false);
+        }
+      }
+    }
+    for (SelectionNode s in set.selections) {
+      switch (s) {
+        case FieldNode():
+          SelectionSetNode? sub = s.selectionSet;
+          if (sub == null) continue;
+          Field<Object?, Object?>? def = parent == null
+              ? null
+              : schema.field(parent, s.name.value);
+          _visit(sub, _subType(_FieldEntry(parent, s, def)));
+        case InlineFragmentNode():
+          NamedTypeNode? on = s.typeCondition?.on;
+          _visit(
+            s.selectionSet,
+            on == null ? parent : _composite(on.name.value),
+          );
+        default:
+          break;
+      }
+    }
+  }
+
+  Map<String, List<_FieldEntry>> _collect(
+    SelectionSetNode set,
+    NamedType? parent, [
+    Map<String, List<_FieldEntry>>? into,
+    Set<String>? seenFragments,
+  ]) {
+    Map<String, List<_FieldEntry>> out = into ?? <String, List<_FieldEntry>>{};
+    Set<String> seen = seenFragments ?? <String>{};
+    for (SelectionNode s in set.selections) {
+      switch (s) {
+        case FieldNode():
+          Field<Object?, Object?>? def = parent == null
+              ? null
+              : schema.field(parent, s.name.value);
+          String key = (s.alias ?? s.name).value;
+          (out[key] ??= <_FieldEntry>[]).add(_FieldEntry(parent, s, def));
+        case InlineFragmentNode():
+          NamedTypeNode? on = s.typeCondition?.on;
+          _collect(
+            s.selectionSet,
+            on == null ? parent : _composite(on.name.value),
+            out,
+            seen,
+          );
+        case FragmentSpreadNode():
+          FragmentDefinitionNode? f = fragments[s.name.value];
+          if (f != null && seen.add(s.name.value)) {
+            _collect(
+              f.selectionSet,
+              _composite(f.typeCondition.on.name.value),
+              out,
+              seen,
+            );
+          }
+        default:
+          break;
+      }
+    }
+    return out;
+  }
+
+  bool _markDone(FieldNode a, FieldNode b, bool exclusive) {
+    Map<FieldNode, Set<FieldNode>> done = exclusive ? _doneExclusive : _done;
+    Set<FieldNode> forA = done[a] ??= Set<FieldNode>.identity();
+    if (!forA.add(b)) return false;
+    (done[b] ??= Set<FieldNode>.identity()).add(a);
+    return true;
+  }
+
+  void _pair(_FieldEntry a, _FieldEntry b, bool parentsExclusive) {
+    if (identical(a.node, b.node)) return;
+    bool exclusive =
+        parentsExclusive ||
+        (!identical(a.parent, b.parent) &&
+            a.parent is ObjectType<Object?, Object?> &&
+            b.parent is ObjectType<Object?, Object?>);
+    if (!_markDone(a.node, b.node, exclusive)) return;
+    String key = (a.node.alias ?? a.node.name).value;
+    String? reason;
+    if (!exclusive) {
+      String nameA = a.node.name.value;
+      String nameB = b.node.name.value;
+      if (nameA != nameB) {
+        reason = '"$nameA" and "$nameB" are different fields';
+      } else if (!_sameArguments(a.node.arguments, b.node.arguments)) {
+        reason = 'they have differing arguments';
+      }
+    }
+    Field<Object?, Object?>? defA = a.def;
+    Field<Object?, Object?>? defB = b.def;
+    if (reason == null &&
+        defA != null &&
+        defB != null &&
+        _typesConflict(defA.type, defB.type)) {
+      reason =
+          'they return conflicting types "${defA.type}" and "${defB.type}"';
+    }
+    if (reason != null) {
+      errors.add(
+        GraphQLError.at(
+          'Fields "$key" conflict because $reason. Use different aliases on '
+          'the fields to fetch both if this was intentional.',
+          <Node>[a.node, b.node],
+        ),
+      );
+      return;
+    }
+    SelectionSetNode? setA = a.node.selectionSet;
+    SelectionSetNode? setB = b.node.selectionSet;
+    if (setA == null || setB == null) return;
+    Map<String, List<_FieldEntry>> subA = _collect(setA, _subType(a));
+    Map<String, List<_FieldEntry>> subB = _collect(setB, _subType(b));
+    for (MapEntry<String, List<_FieldEntry>> e in subA.entries) {
+      List<_FieldEntry>? other = subB[e.key];
+      if (other == null) continue;
+      for (_FieldEntry x in e.value) {
+        for (_FieldEntry y in other) {
+          _pair(x, y, exclusive);
+        }
+      }
+    }
+  }
+
+  bool _sameArguments(List<ArgumentNode> a, List<ArgumentNode> b) {
+    if (a.length != b.length) return false;
+    for (ArgumentNode x in a) {
+      ArgumentNode? y;
+      for (ArgumentNode n in b) {
+        if (n.name.value == x.name.value) y = n;
+      }
+      if (y == null || printNode(x.value) != printNode(y.value)) return false;
+    }
+    return true;
+  }
+
+  bool _typesConflict(GraphQLType a, GraphQLType b) {
+    if (a is ListType) {
+      return b is ListType ? _typesConflict(a.ofType, b.ofType) : true;
+    }
+    if (b is ListType) return true;
+    if (a is NonNullType) {
+      return b is NonNullType ? _typesConflict(a.ofType, b.ofType) : true;
+    }
+    if (b is NonNullType) return true;
+    if ((a is NamedType && a.isLeaf) || (b is NamedType && b.isLeaf)) {
+      return !identical(a, b);
+    }
+    return false;
+  }
+}

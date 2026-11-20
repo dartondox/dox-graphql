@@ -1,0 +1,65 @@
+name: CI
+
+# Every push to main and every pull request: format and analyze of all
+# packages, then the tests and a publish dry run of each package.
+#
+# The Release workflow (release.yaml) runs this workflow first on a tag.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  # Pub workspace: one `dart pub get` at the root links all packages.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - name: Dart checks
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos .
+
+  # also on a release tag: a red test stops the publish
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [dox-graphql]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - name: Resolve the workspace
+        run: dart pub get
+      - name: Dart tests
+        working-directory: packages/${{ matrix.package }}
+        run: dart test --concurrency=4
+      # 65 = warnings only (like a CHANGELOG with only "Unreleased"): shown
+      # as a warning. Any other error fails.
+      - name: Publish dry run
+        working-directory: packages/${{ matrix.package }}
+        run: |
+          code=0
+          dart pub publish --dry-run || code=$?
+          if [ $code -eq 65 ]; then
+            echo "::warning::dry run has warnings, read the log"
+          elif [ $code -ne 0 ]; then
+            exit $code
+          fi

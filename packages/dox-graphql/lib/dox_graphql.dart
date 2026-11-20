@@ -1,0 +1,37 @@
+/// A GraphQL server engine: schema, validation, execution, introspection
+/// and a DataLoader.
+library;
+
+// The query AST of package:gql: custom scalars read literals, and
+// validation rules walk documents.
+export 'package:gql/ast.dart';
+
+export 'src/data_loader.dart';
+export 'src/errors.dart';
+export 'src/executor.dart';
+export 'src/request.dart';
+export 'src/scalars.dart';
+export 'src/schema.dart';
+export 'src/types.dart'
+    show
+        Argument,
+        Directive,
+        EnumType,
+        EnumValue,
+        Field,
+        FieldResolver,
+        GraphQLType,
+        InputField,
+        InputObjectType,
+        InputValues,
+        InterfaceType,
+        ListType,
+        NamedType,
+        NonNullType,
+        ObjectType,
+        ResolveInfo,
+        ScalarType,
+        TypeResolver,
+        UnionType;
+export 'src/validation.dart'
+    show NoIntrospectionRule, ValidationContext, ValidationRule;

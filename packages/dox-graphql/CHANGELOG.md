@@ -1,0 +1,17 @@
+## Unreleased
+
+- First version: the GraphQL engine, in pure Dart.
+  - Type system: the built-in scalars, custom scalars, objects,
+    interfaces, unions, enums, input objects, lists, non-null, arguments
+    with defaults, and deprecation.
+  - `Schema`: query and mutation roots. The schema is checked when it is
+    built, and a bad schema throws a `SchemaError` with every problem.
+  - Validation of queries with the rules of the spec, plus your own
+    `ValidationRule`s.
+  - `GraphQLExecutor`: variables, fragments, `@skip` and `@include`,
+    aliases, async resolvers, query fields side by side, mutation fields
+    one after another, null bubbling, and errors with `locations` and
+    `path`.
+  - Introspection (`__schema`, `__type`), with a switch to turn it off.
+  - A typed context object for every resolver.
+  - `DataLoader` to batch and cache loads.
