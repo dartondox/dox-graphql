@@ -120,6 +120,29 @@ void main() {
       });
     });
 
+    test('input with no offset is read as UTC', () async {
+      expect(
+        graphqlDateTime.parseValue('2026-11-20T10:00:00'),
+        DateTime.utc(2026, 11, 20, 10),
+      );
+      expect(
+        graphqlDateTime.parseValue('2026-11-20'),
+        DateTime.utc(2026, 11, 20),
+      );
+      expect(
+        graphqlDateTime.parseValue('2026-11-20T10:00:00+02:00'),
+        DateTime.utc(2026, 11, 20, 8),
+      );
+      Map<String, Object?> res = await run(
+        schemaWith(),
+        '{ a: echo(at: "2026-11-20T10:00:00") b: echo(at: "2026-11-20") }',
+      );
+      expect(res['data'], <String, Object?>{
+        'a': '2026-11-21T10:00:00.000Z',
+        'b': '2026-11-21T00:00:00.000Z',
+      });
+    });
+
     test('a local time is sent in UTC', () async {
       Map<String, Object?> res = await run(schemaWith(), '{ local }');
       expect(res, <String, Object?>{

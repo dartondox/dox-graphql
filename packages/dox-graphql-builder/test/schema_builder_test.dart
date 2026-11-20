@@ -660,6 +660,23 @@ class Post { final int id = 1; }
       expect(out, contains('Post: `dto:` works only on a model of dox_orm.'));
     });
 
+    test('a private @GraphQLType class', () async {
+      await expectError('''
+$_hello
+@GraphQLType()
+class _Hidden { final int id = 1; }
+''', '_Hidden: a @GraphQLType class can not be private');
+    });
+
+    test('a private enum as a field type', () async {
+      await expectError('''
+$_hello
+enum _Priv { a, b }
+@GraphQLType()
+class Post { final _Priv kind = _Priv.a; }
+''', '_Priv: a private enum can not be a GraphQL type');
+    });
+
     test('a schema with no query', () async {
       await expectError('''
 @GraphQLType()

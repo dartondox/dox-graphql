@@ -47,7 +47,8 @@
   `@GraphQLIgnore`, `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.
 - The base class of all types is now `GraphQLTypeRef`, so the name
   `GraphQLType` is free for the annotation.
-- `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text in UTC.
+- `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text in UTC. Input with no
+  offset is read as UTC.
 - `GraphQLDto.validate` runs the rules of a `@Dto` on mutation input. A
   failed check gives one error "Validation failed" with
   `extensions: {code: VALIDATION_FAILED, fields: {name: message}}`.

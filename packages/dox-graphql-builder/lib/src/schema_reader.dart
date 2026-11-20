@@ -115,6 +115,14 @@ class SchemaReader {
   void addType(ClassElement element) {
     DartObject type = annotation(element, 'GraphQLType')!;
     String where = element.displayName;
+    if (element.isPrivate) {
+      _fail(
+        where,
+        'a @GraphQLType class can not be private: schema.g.dart is another '
+        'library. Remove the `_`.',
+        element,
+      );
+    }
     String name = _string(type, 'name') ?? element.displayName;
     _checkName(name, where, element);
     _claimTypeName(name, where, element);
@@ -516,6 +524,14 @@ class SchemaReader {
   EnumSpec _enum(EnumElement element) {
     EnumSpec? spec = enums[element];
     if (spec != null) return spec;
+    if (element.isPrivate) {
+      _fail(
+        element.displayName,
+        'a private enum can not be a GraphQL type: schema.g.dart is another '
+        'library. Remove the `_`.',
+        element,
+      );
+    }
     _claimTypeName(element.displayName, element.displayName, element);
     imports.prefix(element.library);
     return enums[element] = EnumSpec(element, element.library.uri.toString());
