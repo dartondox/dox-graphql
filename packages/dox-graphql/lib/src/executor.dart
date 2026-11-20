@@ -51,6 +51,7 @@ final class GraphQLExecutor<C> {
     this.maxQueryLength = 1000000,
     this.maxFields = 20000,
     this.maxNodes = 100000,
+    this.maxErrors = 100,
     this.showInternalErrors = false,
   }) : rules = <ValidationRule>[
          if (!introspection) const NoIntrospectionRule(),
@@ -64,6 +65,9 @@ final class GraphQLExecutor<C> {
   final int maxQueryLength;
   final int maxFields;
   final int maxNodes;
+
+  /// Validation stops after this many errors.
+  final int maxErrors;
   final bool showInternalErrors;
 
   /// Runs one request. It never throws: errors are in the response.
@@ -166,7 +170,11 @@ final class GraphQLExecutor<C> {
   /// [rules]. A document that uses up the stack throws a
   /// [StackOverflowError]; [execute] turns that into an error.
   List<GraphQLError> validate(DocumentNode document) {
-    List<GraphQLError> errors = DocumentValidator(schema, document).validate();
+    List<GraphQLError> errors = DocumentValidator(
+      schema,
+      document,
+      maxErrors,
+    ).validate();
     if (errors.isNotEmpty) return errors;
     if (QueryLimits.selectionDepth(document) > maxDepth) {
       return _tooDeep().errors;
@@ -182,6 +190,11 @@ final class GraphQLExecutor<C> {
     ValidationContext context = ValidationContext(schema, document);
     for (ValidationRule rule in rules) {
       errors.addAll(rule.validate(context));
+    }
+    if (errors.length > maxErrors) {
+      errors
+        ..length = maxErrors
+        ..add(DocumentValidator.tooManyErrors());
     }
     return errors;
   }
@@ -246,24 +259,35 @@ final class _Execution {
   final bool showInternalErrors;
   final int maxNodes;
   int _nodes = 0;
+
+  /// The sub fields of each object type and field node list. All items of
+  /// a list share one node list, so their fields are collected once.
+  /// Variables are fixed for the request, so `@skip` and `@include` give
+  /// the same result every time.
+  final Map<NamedType, Map<List<FieldNode>, Map<String, List<FieldNode>>>>
+  _subFields =
+      Map<
+        NamedType,
+        Map<List<FieldNode>, Map<String, List<FieldNode>>>
+      >.identity();
   final List<GraphQLError> errors = <GraphQLError>[];
 
   Future<GraphQLResponse> run() async {
     ObjectType<Object?, Object?> root = schema.rootType(operation.type)!;
-    Map<String, List<FieldNode>> fields;
-    try {
-      fields = _collect(
-        root,
-        operation.selectionSet,
-        <String, List<FieldNode>>{},
-        <String>{},
-      );
-    } on GraphQLError catch (e) {
-      // A bad @skip or @include argument, like an explicit null variable.
-      return GraphQLResponse.failed(<GraphQLError>[e]);
-    }
     Map<String, Object?>? data;
     try {
+      Map<String, List<FieldNode>> fields;
+      try {
+        fields = _collect(
+          root,
+          operation.selectionSet,
+          <String, List<FieldNode>>{},
+          <String>{},
+        );
+      } on GraphQLError catch (e) {
+        // A bad @skip or @include argument, like an explicit null variable.
+        return GraphQLResponse.failed(<GraphQLError>[e]);
+      }
       data = operation.type == OperationType.mutation
           ? await _serialFields(root, fields)
           : await _fields(root, null, fields, null);
@@ -290,13 +314,15 @@ final class _Execution {
   }
 
   /// Collects the fields of a selection set by response name, with
-  /// fragments, `@skip` and `@include`.
+  /// fragments, `@skip` and `@include`. Each walked selection counts
+  /// toward [maxNodes].
   Map<String, List<FieldNode>> _collect(
     ObjectType<Object?, Object?> type,
     SelectionSetNode set,
     Map<String, List<FieldNode>> out,
     Set<String> visitedFragments,
   ) {
+    _spend(set.selections.length);
     for (SelectionNode s in set.selections) {
       switch (s) {
         case FieldNode():
@@ -539,11 +565,18 @@ final class _Execution {
         'Expected value of type "${type.name}" but got: $result.',
       );
     }
-    Map<String, List<FieldNode>> fields = <String, List<FieldNode>>{};
-    Set<String> visited = <String>{};
-    for (FieldNode n in nodes) {
-      SelectionSetNode? set = n.selectionSet;
-      if (set != null) _collect(type, set, fields, visited);
+    Map<List<FieldNode>, Map<String, List<FieldNode>>> forType =
+        _subFields[type] ??=
+            Map<List<FieldNode>, Map<String, List<FieldNode>>>.identity();
+    Map<String, List<FieldNode>>? fields = forType[nodes];
+    if (fields == null) {
+      fields = <String, List<FieldNode>>{};
+      Set<String> visited = <String>{};
+      for (FieldNode n in nodes) {
+        SelectionSetNode? set = n.selectionSet;
+        if (set != null) _collect(type, set, fields, visited);
+      }
+      forType[nodes] = fields;
     }
     return _fields(type, result, fields, path);
   }

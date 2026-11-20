@@ -19,8 +19,9 @@
   - Safety limits: `maxDepth` (64), `maxQueryLength` (1,000,000
     characters), `maxFields` (20,000 selected fields, with fragments
     expanded, checked before running), `maxNodes` (100,000 resolved fields
-    and list items, checked while running), a work budget for the
-    overlapping fields check, and `execute` never throws.
+    and list items, checked while running), `maxErrors` (100 validation
+    errors), a work budget for the overlapping fields check, and `execute`
+    never throws.
   - Errors from resolvers that are not a `GraphQLError` are sent as
     "Internal server error". `showInternalErrors: true` shows the real
     message.

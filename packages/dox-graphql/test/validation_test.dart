@@ -483,6 +483,31 @@ void main() {
     expect(r.errors.single.originalError, isA<StateError>());
   });
 
+  test('validation stops after maxErrors', () {
+    String tooMany =
+        'Too many validation errors, error limit reached. Validation aborted.';
+    StringBuffer fields = StringBuffer();
+    for (int i = 0; i < 1000; i++) {
+      fields.write('u$i ');
+    }
+    List<String> errors = errorsOf('{ dog { $fields} }');
+    expect(errors, hasLength(101));
+    expect(errors.first, 'Cannot query field "u0" on type "Dog".');
+    expect(errors.last, tooMany);
+
+    StringBuffer vars = StringBuffer();
+    for (int i = 0; i < 1000; i++) {
+      vars.write(r'$a: Int ');
+    }
+    expect(errorsOf('query ($vars) { dog { name } }').last, tooMany);
+
+    GraphQLExecutor<Object?> few = GraphQLExecutor<Object?>(
+      schema,
+      maxErrors: 3,
+    );
+    expect(errorsOf('{ dog { $fields} }', few), hasLength(4));
+  });
+
   test('extra rules run after the spec rules', () {
     GraphQLExecutor<Object?> e = GraphQLExecutor<Object?>(
       schema,

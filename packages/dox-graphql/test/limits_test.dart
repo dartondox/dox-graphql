@@ -37,6 +37,12 @@ final Schema<Object?> schema = Schema<Object?>(
         graphqlInt,
         resolve: (Object? _, ResolveInfo<Object?> i) => 1,
       ),
+      Field<Object?, Object?>(
+        'items',
+        nodeType.list,
+        resolve: (Object? _, ResolveInfo<Object?> i) =>
+            List<int>.generate(1000, (int k) => k),
+      ),
     ],
   ),
 );
@@ -251,6 +257,49 @@ void main() {
           'The query selects too many fields: the limit is 20000.',
         );
       }, limit);
+    });
+  });
+
+  group('repeated selections on a list', () {
+    // Each item of a list has the same selection set. It is collected once
+    // per request, not once per item.
+    Duration limit = const Duration(seconds: 2);
+
+    test('5000 repeated fields with @include on 1000 items', () async {
+      await fast(() async {
+        GraphQLResponse r = await run(
+          '{ items { ${'b @include(if: true) ' * 5000}} }',
+        );
+        expect(r.errors, isEmpty);
+        expect((r.data!['items']! as List<Object?>).length, 1000);
+      }, limit);
+    });
+
+    test('5000 repeated inline fragments on 1000 items', () async {
+      await fast(() async {
+        GraphQLResponse r = await run(
+          '{ items { ${'... on Node { b } ' * 5000}} }',
+        );
+        expect(r.errors, isEmpty);
+      }, limit);
+    });
+
+    test('@skip with a variable still works per request', () async {
+      Future<GraphQLResponse> withSkip(bool skip) => executor.execute(
+        GraphQLRequest(
+          r'query ($s: Boolean!) { items { b @skip(if: $s) } }',
+          variables: <String, Object?>{'s': skip},
+        ),
+        context: null,
+      );
+      expect(
+        ((await withSkip(true)).data!['items']! as List<Object?>).first,
+        <String, Object?>{},
+      );
+      expect(
+        ((await withSkip(false)).data!['items']! as List<Object?>).first,
+        <String, Object?>{'b': 0},
+      );
     });
   });
 

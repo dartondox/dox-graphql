@@ -73,6 +73,11 @@ final class NoIntrospectionRule implements ValidationRule {
   }
 }
 
+/// Thrown when validation has found [DocumentValidator.maxErrors] errors.
+final class _TooManyErrors {
+  const _TooManyErrors();
+}
+
 final class _VariableUsage {
   _VariableUsage(this.node, this.type, this.hasDefault);
 
@@ -90,10 +95,13 @@ final class _DefinitionUses {
 /// Runs the validation rules of the spec on a document, in one walk.
 @internal
 final class DocumentValidator {
-  DocumentValidator(this.schema, this.document);
+  DocumentValidator(this.schema, this.document, this.maxErrors);
 
   final Schema<Object?> schema;
   final DocumentNode document;
+
+  /// Validation stops after this many errors.
+  final int maxErrors;
   final List<GraphQLError> errors = <GraphQLError>[];
   final Map<String, FragmentDefinitionNode> _fragments =
       <String, FragmentDefinitionNode>{};
@@ -102,10 +110,29 @@ final class DocumentValidator {
   _DefinitionUses _uses = _DefinitionUses();
 
   void _error(String message, List<Node> nodes) {
-    errors.add(GraphQLError.at(message, nodes));
+    _report(GraphQLError.at(message, nodes));
   }
 
+  void _report(GraphQLError error) {
+    errors.add(error);
+    if (errors.length >= maxErrors) throw const _TooManyErrors();
+  }
+
+  /// The last error when validation stopped early.
+  static GraphQLError tooManyErrors() => GraphQLError(
+    'Too many validation errors, error limit reached. Validation aborted.',
+  );
+
   List<GraphQLError> validate() {
+    try {
+      _validate();
+    } on _TooManyErrors {
+      errors.add(tooManyErrors());
+    }
+    return errors;
+  }
+
+  void _validate() {
     List<OperationDefinitionNode> operations = <OperationDefinitionNode>[];
     for (DefinitionNode d in document.definitions) {
       switch (d) {
@@ -166,8 +193,7 @@ final class DocumentValidator {
     for (OperationDefinitionNode op in operations) {
       _checkVariables(op, opUses[op]!);
     }
-    _OverlapChecker(schema, _fragments, errors).checkDocument(document);
-    return errors;
+    _OverlapChecker(schema, _fragments, _report).checkDocument(document);
   }
 
   static String _definitionName(DefinitionNode d) => switch (d) {
@@ -687,11 +713,11 @@ final class _TooComplex {
 /// with every other field. Same name and same arguments is an equivalence,
 /// so this finds the same conflicts. A work budget stops hostile queries.
 final class _OverlapChecker {
-  _OverlapChecker(this.schema, this.fragments, this.errors);
+  _OverlapChecker(this.schema, this.fragments, this.report);
 
   final Schema<Object?> schema;
   final Map<String, FragmentDefinitionNode> fragments;
-  final List<GraphQLError> errors;
+  final void Function(GraphQLError error) report;
 
   /// The most field visits and comparisons one document may need.
   static const int _budget = 500000;
@@ -723,7 +749,7 @@ final class _OverlapChecker {
         }
       }
     } on _TooComplex {
-      errors.add(GraphQLError('The query is too complex to validate.'));
+      report(GraphQLError('The query is too complex to validate.'));
     }
   }
 
@@ -944,7 +970,7 @@ final class _OverlapChecker {
           'they return conflicting types "${defA.type}" and "${defB.type}"';
     }
     if (reason == null) return false;
-    errors.add(
+    report(
       GraphQLError.at(
         'Fields "$key" conflict because $reason. Use different aliases on '
         'the fields to fetch both if this was intentional.',

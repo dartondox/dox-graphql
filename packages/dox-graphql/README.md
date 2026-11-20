@@ -90,6 +90,7 @@ Future<void> main() async {
   selects more than `maxFields` (20,000) fields, with fragments expanded,
   is rejected before it runs. A request stops with one error when it
   resolves more than `maxNodes` (100,000) fields and list items.
+  Validation stops after `maxErrors` (100) errors.
 - An error from a resolver that is not a `GraphQLError` is sent as
   "Internal server error". Turn on `showInternalErrors` in development
   to see the real message. Throw a `GraphQLError` to send your own.
