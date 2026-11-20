@@ -20,12 +20,14 @@ dox add graphql            # runs graphql:install
 dox add graphql --no-orm   # for an app without models
 ```
 
-The command does these things. It never overwrites a file. Do not write these files by hand.
+The command does these things. It never overwrites a file. Do not make these files by hand. Edit the config.
 
 - Adds `dox_core`, `dox_graphql` and `dox_graphql_orm` (not with `--no-orm`).
 - Adds the dev dependencies `dox_graphql_builder`, `dox_builder` and `build_runner`.
 - Writes `lib/config/graphql.dart` and `lib/providers/graphql_provider.dart`.
 - Runs `build_runner`.
+
+The command does not add `dox_auth`. The config that it writes is `GraphQLConfig(schema: graphqlSchema)`, with no middleware. Thus, the API is public until you add the auth middleware (see Config).
 
 After each change to an annotation, a model or a DTO, run the builder and start the app again:
 
@@ -34,6 +36,12 @@ dart run build_runner build
 ```
 
 ## 2. Config
+
+The installed config has no login. To make clients log in:
+
+1. If the app has no login, run `dox add auth`.
+2. Add the `dox_auth` import to `lib/config/graphql.dart`.
+3. Add `middleware: <Object>[AuthMiddleware()]`.
 
 `lib/config/graphql.dart`:
 
@@ -122,7 +130,7 @@ class PostResolver {
 
   @GraphQLQuery()
   Future<User?> me(DoxGraphQLContext context) {
-    return context.user<User>(); // null for a guest
+    return context.user<User>();
   }
 }
 ```
@@ -162,7 +170,7 @@ Change the rule with `auth:`:
 | Code | Result |
 |---|---|
 | `@GraphQLQuery(auth: false)`, `@GraphQLMutation(auth: false)` | That field is public. |
-| `@GraphQLType(auth: false)` | The type is public: its automatic fields and the relations that give it. |
+| `@GraphQLType(auth: false)` | The type is public: its list and find queries, its automatic mutations, and the relations that give it. With `dto:` and no `owner:`, a guest can create rows. |
 | `@GraphQLType(auth: true)` | Each field that gives the type needs a login, also in a public query. |
 | `@GraphQLField(auth: true)`, `@ResolveField(auth: true)` | That field of a type needs a login. |
 | `owner:` | Create always needs a login, also with `auth: false`. |
@@ -239,7 +247,8 @@ A field error has status 200 also. Always check `errors`.
 - `@GraphQLType()` on a model, but not on the models of its relations.
 - No auth middleware in `GraphQLConfig.middleware`. The full API is then public, with the automatic create mutations.
 - The automatic create mutation does not ask the policy today. It does not call a `create` ability. Only a login protects it. Use `owner:`, or write your own `@GraphQLMutation` and do the check there.
-- `policy:` without `dto:`. The model then gets no update and no delete mutation.
+- `dto:` without `policy:`: the model then gets only the create mutation.
+- `@GraphQLType(auth: false)` on a model with `dto:` and no `owner:`. The create mutation is then public also. To make only reads public, keep the default and write a `@GraphQLQuery(auth: false)`, or use `owner:`.
 - A model with private data, for example `User`, without `auth: true`. A public type or an API without the auth middleware then shows it through relations.
 - A secret column that is not in `hidden` and has no `@GraphQLIgnore()`.
 - The owner column as a DTO field. The client must not send it. Use `owner:`.
