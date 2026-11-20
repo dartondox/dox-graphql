@@ -1,267 +1,46 @@
 # dox_graphql
 
-A GraphQL server engine for Dart. It follows the GraphQL spec (October
-2021 edition).
+GraphQL for the Dox framework. You put annotations on your models and
+resolver classes. The builder writes the schema. The package serves it over HTTP
+at `/graphql`, with GraphiQL in development.
 
-- Types: scalars (built-in and custom), objects, interfaces, unions,
-  enums, input objects, lists and non-null.
-- A schema that is checked when you build it.
-- Query validation with the rules of the spec, plus your own rules.
-- Execution: variables, fragments, `@skip` / `@include`, async resolvers,
-  null bubbling, and errors with `locations` and `path`.
-- Introspection, so tools like GraphiQL work. You can turn it off.
-- A `DataLoader` to batch and cache database loads.
-- A Dox provider that serves GraphQL over HTTP, with GraphiQL in
-  development.
+The engine is pure Dart. It follows the GraphQL spec and has validation,
+introspection and a `DataLoader`.
 
-The engine is pure Dart. It uses [gql](https://pub.dev/packages/gql) only
-to parse queries.
-
-## Install in a Dox app
+## Install
 
 ```bash
 dox add graphql
 ```
 
-It adds the packages, writes `lib/config/graphql.dart` and
-`lib/providers/graphql_provider.dart`, and runs the builder. Use
-`dox graphql:install --no-orm` for an app without models. Then put
-`@GraphQLType()` on a model, run `dart run build_runner build`, start the
-app and open `/graphql`.
+This adds the packages, writes the config and the provider, and runs the
+builder. Use `dox add graphql --no-orm` for an app without models.
 
 ## Example
-
-```dart
-import 'package:dox_graphql/dox_graphql.dart';
-
-class AppContext {
-  AppContext(this.userName);
-  final String userName;
-}
-
-class Book {
-  Book(this.title, this.year);
-  final String title;
-  final int year;
-}
-
-final ObjectType<Book, AppContext> bookType = ObjectType<Book, AppContext>(
-  'Book',
-  fields: () => <Field<Book, AppContext>>[
-    Field<Book, AppContext>(
-      'title',
-      graphqlString.nonNull,
-      resolve: (Book b, ResolveInfo<AppContext> info) => b.title,
-    ),
-    Field<Book, AppContext>(
-      'year',
-      graphqlInt,
-      resolve: (Book b, ResolveInfo<AppContext> info) => b.year,
-    ),
-  ],
-);
-
-final GraphQLSchema<AppContext> schema = GraphQLSchema<AppContext>(
-  query: ObjectType<Object?, AppContext>(
-    'Query',
-    fields: () => <Field<Object?, AppContext>>[
-      Field<Object?, AppContext>(
-        'books',
-        bookType.nonNull.list.nonNull,
-        args: <Argument>[Argument('limit', graphqlInt, defaultValue: '10')],
-        resolve: (Object? _, ResolveInfo<AppContext> info) async {
-          int limit = info.args.get<int>('limit')!;
-          return <Book>[Book('Dune', 1965)].take(limit).toList();
-        },
-      ),
-    ],
-  ),
-);
-
-Future<void> main() async {
-  GraphQLExecutor<AppContext> executor = GraphQLExecutor<AppContext>(schema);
-  GraphQLResponse response = await executor.execute(
-    const GraphQLRequest('{ books { title year } }'),
-    context: AppContext('ann'),
-  );
-  print(response.toJson()); // {data: {books: [{title: Dune, year: 1965}]}}
-}
-```
-
-## Notes
-
-- `fields` is a function, so types can point at each other.
-- `ObjectType<S, C>`: `S` is the Dart type of the parent value, `C` the
-  type of the context. Without `isTypeOf`, a value belongs to the type
-  when it is an `S`. This is how interfaces and unions find the type of
-  a value. When two possible types match the same value this way (like
-  two types made from `Map`), the field fails: give them `isTypeOf`, or
-  give the interface or union a `resolveType`.
-- Default values are GraphQL literal text: `'10'`, `'"hi"'`, `'RED'`,
-  `'{limit: 5}'`. They are checked when the schema is built.
-- Resolvers read arguments with typed getters: `info.args.get<int>('id')`,
-  `info.args.list<String>('tags')`, `info.args.input('filter')`.
-- `execute` never throws. A query deeper than `maxDepth` (64) or longer
-  than `maxQueryLength` is rejected before it is parsed. A query that
-  selects more than `maxFields` (20,000) fields, with fragments expanded,
-  is rejected before it runs. A request stops with one error when it
-  resolves more than `maxNodes` (100,000) fields and list items.
-  At most `maxErrors` (100) errors are kept. Validation stops at the
-  next error. A request keeps the data it has built; fields that start
-  after the cap give null. Both add one last error.
-- An error from a resolver that is not a `GraphQLError` is sent as
-  "Internal server error". Turn on `showInternalErrors` in development
-  to see the real message. Throw a `GraphQLError` to send your own.
-- Make one `DataLoader` per request, in the context, so the cache lives
-  only as long as the request.
-
-## Use it in a Dox app
-
-`GraphQLProvider` adds the endpoint. It builds the executor once when the
-app starts and adds `GET` and `POST` routes at `/graphql`.
-
-Put the config in `lib/config/graphql.dart`:
-
-```dart
-import 'package:dox_graphql/dox_graphql.dart';
-
-GraphQLConfig graphqlConfig = GraphQLConfig(
-  schema: schema, // a GraphQLSchema<DoxGraphQLContext>
-  middleware: <Object>[AuthMiddleware()],
-);
-```
-
-Add a provider (Dox finds it, like every `DoxProvider`):
-
-```dart
-class AppGraphQLProvider extends GraphQLProvider {
-  AppGraphQLProvider() : super(graphqlConfig);
-}
-```
-
-Resolvers get a `DoxGraphQLContext`:
-
-```dart
-Field<Object?, DoxGraphQLContext>(
-  'me',
-  userType,
-  resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) async {
-    User? me = await info.context.user<User>(); // null for a guest
-    return me;
-  },
-)
-```
-
-- `info.context.request`: the `DoxRequest`.
-- `await info.context.user<T>()` and `await info.context.auth()`: the
-  logged-in user, or null for a guest. The auth middleware runs the
-  first time they are called, once per request.
-- `info.context.make<T>()`: a service from the Dox container.
-- `info.context.loader<K, V>(name, create)`: a `DataLoader` for this
-  request only. The first call makes it; later calls get the same one.
-
-### Login
-
-The auth middleware is any `IAuthMiddleware` of dox_core, like
-`AuthMiddleware()` of dox_auth. With it in
-`middleware`, fields need a logged-in user by default. Without it,
-every field is public. `auth:` changes this:
-
-```dart
-@GraphQLQuery(auth: false) // public, even with the auth middleware
-List<Post> latestPosts() => ...;
-
-@GraphQLMutation(auth: true) // needs a login
-Future<Post> publish(int id) => ...;
-
-@GraphQLType(auth: true) // every field that gives a User needs a login
-class User extends UserGenerator {}
-```
-
-Which fields need a login:
-
-1. A field that gives a type with `auth: true`. This covers the model
-   queries, relations (like `post.user`), custom resolvers, and an
-   interface or union field whose value is of that type.
-2. Else, a field with `auth:` uses it.
-3. Else, a field that gives a type with `auth: false` is public.
-4. Else, a query or mutation field, and a field that gives an object
-   (a relation), use the default.
-5. Else (a text, number or enum field of a type), the field is public.
-
-- The auth middleware does not run on the route, and it never stops the
-  request. It runs the first time a field needs the user, once per
-  request. A request with only public fields does no token lookup.
-- A guest or a bad token gets no user. A field that needs a login then
-  fails with "Unauthenticated" and `extensions: {code: UNAUTHENTICATED}`.
-  Its resolver does not run. The other fields still give their data.
-- The status stays `200` with the error, as for any field error.
-- Other middleware in `middleware` runs before the user is known, so do
-  not put middleware there that reads `req.auth`. Check the user in the
-  resolver instead.
-- `auth: true` with no auth middleware stops the app at start, with the
-  name of the field or type.
-- In development, the app prints at start how many query, mutation and
-  relation fields are public and how many need a login.
-- Introspection still shows every field. The resolvers do not run, so no
-  data leaks.
-
-### Writes to a model
-
-`@GraphQLType(dto: CreatePostDto)` adds `createPost`. It follows the
-login rules above.
-
-`updatePost` and `deletePost` need a policy of dox_auth too:
 
 ```dart
 @GraphQLType(dto: CreatePostDto, policy: PostPolicy)
 class Post extends PostGenerator {}
 
-class PostPolicy extends Policy<User, Post> {
-  bool update(User user, Post post) => post.userId == user.id;
-  bool delete(User user, Post post) => post.userId == user.id;
-
-  @override
-  Map<String, Function> get abilities => <String, Function>{
-    'update': update,
-    'delete': delete,
-  };
+class PostResolver {
+  @GraphQLQuery(auth: false)
+  Future<List<Post>> latestPosts() => Post().orderBy('id', 'desc').limit(10).get();
 }
-
-// in the setup() of a provider
-Gate.policy<Post>(PostPolicy());
 ```
 
-They load the row, then ask the policy (`update` or `delete`) for that
-row. A denied write fails with "Forbidden" and
-`extensions: {code: FORBIDDEN}`, and nothing is written. Without
-`policy:`, there is no update or delete mutation.
+```dart
+GraphQLConfig graphqlConfig = GraphQLConfig(
+  schema: graphqlSchema,
+  middleware: <Object>[AuthMiddleware()],
+);
+```
 
-### Defaults
+- With `AuthMiddleware()` in `middleware`, queries, mutations and
+  relations need a login by default. `auth: false` makes one public.
+- Without it, everything is public. `auth: true` then stops the app at
+  start.
+- `createPost` comes from `dto:`. `updatePost` and `deletePost` exist only
+  with `policy:`.
+- In a resolver, read the user with `await info.context.user<User>()`.
 
-| Setting | Default |
-| --- | --- |
-| `path` | `/graphql` |
-| `introspection` | on when `APP_ENV` is `development`, else off |
-| `showInternalErrors` | on when `APP_ENV` is `development`, else off |
-| `graphiql` | on when `APP_ENV` is `development`, else off |
-| `maxDepth`, `maxQueryLength`, `maxFields`, `maxNodes`, `maxErrors` | the engine defaults |
-
-### HTTP
-
-- `POST` with a JSON body: `query`, `variables`, `operationName`,
-  `extensions`.
-- `GET` with the same names in the URL (`variables` and `extensions` as
-  JSON text). Queries only: a mutation gets `405` with `Allow: POST`.
-- The answer is `application/graphql-response+json` when the `Accept`
-  header has it, else `application/json`. With the new type, a request
-  that fails before it runs (syntax, validation, variables) gets `400`.
-  With `application/json` it gets `200`.
-- Bad JSON or a missing query gets `400` with a GraphQL error. A body
-  that is not JSON gets `415`.
-- An error a resolver throws is sent to the `ExceptionHandler` of the
-  app (it logs with the Dox logger by default). The client sees
-  "Internal server error", unless `showInternalErrors` is on.
-- A browser that opens `/graphql` gets the GraphiQL page when `graphiql`
-  is on. It loads GraphiQL 4.1.2 and React 18.3.1 from jsDelivr, with
-  SRI hashes.
+Read the full docs: https://dartondox.dev/latest/packages/graphql/
