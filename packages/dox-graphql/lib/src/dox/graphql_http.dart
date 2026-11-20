@@ -57,14 +57,17 @@ class GraphQLHttpHandler {
         if (body.kind == BodyKind.invalidJson) {
           return _error(400, 'The body is not valid JSON.', newType);
         }
-        if (body.kind != BodyKind.json) {
+        // An empty JSON body has no kind: read the header for it.
+        if (body.kind != BodyKind.json && !req.isJson()) {
           return _error(
             415,
             'Send the request as JSON, with Content-Type: application/json.',
             newType,
           );
         }
-        Object? json = body.json;
+        Object? json = body.kind == BodyKind.json
+            ? body.json
+            : <String, Object?>{};
         if (json is! Map<String, Object?>) {
           return _error(400, 'The body must be a JSON object.', newType);
         }
@@ -156,7 +159,7 @@ class GraphiQLPage {
   static String html(String path) {
     // JSON is valid JavaScript; `<` is escaped so the text can not end the
     // script tag.
-    String url = jsonEncode(path).replaceAll('<', r'<');
+    String url = jsonEncode(path).replaceAll('<', r'\u003c');
     return '''
 <!doctype html>
 <html lang="en">

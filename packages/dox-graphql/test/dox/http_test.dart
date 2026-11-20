@@ -1,6 +1,7 @@
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
+import 'package:dox_graphql/src/dox/graphql_http.dart';
 import 'package:test/test.dart';
 
 import 'app.dart';
@@ -141,6 +142,18 @@ void main() {
         res.json['errors'][0]['message'],
         'The "extensions" must be an object.',
       );
+    });
+
+    test('an empty JSON body is 400 with no query', () async {
+      TestResponse res = await client.post(
+        '/api/graphql',
+        headers: <String, String>{
+          ...acceptNew,
+          'content-type': 'application/json',
+        },
+      );
+      res.expectStatus(400);
+      expect(res.json['errors'][0]['message'], 'The request has no "query".');
     });
 
     test('a body that is not JSON is 415', () async {
@@ -292,6 +305,13 @@ void main() {
       expect(res.body, contains('graphiql@4.1.2'));
       expect(res.body, contains('integrity="sha384-'));
       expect(res.body, contains('url: "/api/graphql"'));
+    });
+
+    test('the path can not end the script tag', () {
+      String page = GraphiQLPage.html('/x</script><script>alert(1)//');
+      String script = page.substring(page.indexOf('GraphiQL.createFetcher'));
+      expect(script.indexOf('</script>'), greaterThan(script.indexOf('alert')));
+      expect(page, contains(r'url: "/x\u003c/script>\u003cscript>alert(1)//"'));
     });
 
     test('a browser GET with a query runs the query', () async {
