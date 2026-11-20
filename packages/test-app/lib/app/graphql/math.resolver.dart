@@ -12,8 +12,8 @@ class MathResolver {
     ];
   }
 
-  /// The path of the request.
-  @GraphQLQuery()
+  /// The path of the request. Public, even with the auth middleware.
+  @GraphQLQuery(auth: false)
   String path(DoxGraphQLContext context) {
     DoxRequest request = context.request;
     return request.uri.path;

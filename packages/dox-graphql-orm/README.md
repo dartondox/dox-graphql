@@ -6,7 +6,8 @@ The [dox_orm](https://pub.dev/packages/dox_orm) part of
 
 - the list and find queries, like `posts(limit: 10)` and `post(id: "1")`,
 - relations loaded in batches, one query per relation (no N+1),
-- the create, update and delete mutations of `@GraphQLType(dto: ...)`.
+- the create mutation of `@GraphQLType(dto: ...)`, and update and
+  delete with `policy:`.
 
 Add it to an app that has `@GraphQLType()` on its models:
 

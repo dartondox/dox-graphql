@@ -9,7 +9,7 @@ import 'graphql_context.dart';
 /// ```dart
 /// GraphQLConfig graphqlConfig = GraphQLConfig(
 ///   schema: schema,
-///   middleware: <Object>[AuthMiddleware(optional: true)],
+///   middleware: <Object>[AuthMiddleware()],
 /// );
 /// ```
 class GraphQLConfig {
@@ -37,6 +37,14 @@ class GraphQLConfig {
   /// Middleware of the route, after the global middleware of the app. It
   /// takes the same kinds as a Dox route: middleware objects and
   /// functions.
+  ///
+  /// With the auth middleware (`AuthMiddleware()` of dox_auth) here,
+  /// every root field needs a logged-in user, and `auth: false` makes a
+  /// field public. Without it, every field is public. The auth
+  /// middleware never stops the request: a guest or a bad token goes on
+  /// with no user, and each field that needs a login fails with
+  /// "Unauthenticated" (code `UNAUTHENTICATED`). The other fields still
+  /// give their data.
   final List<Object> middleware;
 
   /// `__schema` and `__type` queries. Null (default): on when `APP_ENV`

@@ -14,6 +14,26 @@ import 'types.dart';
 import 'validation.dart';
 import 'values.dart';
 
+/// Checks a field before its resolver runs, like a login check.
+abstract interface class FieldGuard {
+  /// The error that fails [field] of [parent], or null to run the
+  /// resolver. [context] is the context of the request. Give a plain
+  /// value when no wait is needed: a Future costs a little on each field.
+  FutureOr<GraphQLError?> check(
+    ObjectType<Object?, Object?> parent,
+    Field<Object?, Object?> field,
+    Object? context,
+  );
+
+  /// The error that fails a value of the object [type], or null to go on.
+  /// It runs when an interface or union field picks [type] for its
+  /// value, so a type that the field type does not show is checked too.
+  FutureOr<GraphQLError?> checkType(
+    ObjectType<Object?, Object?> type,
+    Object? context,
+  );
+}
+
 /// Parses, validates and runs GraphQL requests on a [GraphQLSchema].
 ///
 /// ```dart
@@ -43,6 +63,9 @@ final class GraphQLExecutor<C> {
   /// text leaks. [showInternalErrors] sends the real message (for
   /// development). The real error is always in
   /// [GraphQLError.originalError].
+  ///
+  /// [guard] checks each field before its resolver runs. When it gives an
+  /// error, the resolver does not run and the field fails with it.
   GraphQLExecutor(
     this.schema, {
     this.introspection = true,
@@ -53,6 +76,7 @@ final class GraphQLExecutor<C> {
     this.maxNodes = defaultMaxNodes,
     this.maxErrors = defaultMaxErrors,
     this.showInternalErrors = false,
+    this.guard,
   }) : rules = <ValidationRule>[
          if (!introspection) const NoIntrospectionRule(),
          ...rules,
@@ -86,6 +110,7 @@ final class GraphQLExecutor<C> {
   /// null; the data built so far is kept. Both add one last error.
   final int maxErrors;
   final bool showInternalErrors;
+  final FieldGuard? guard;
 
   /// Runs one request. It never throws: errors are in the response.
   ///
@@ -190,6 +215,7 @@ final class GraphQLExecutor<C> {
       showInternalErrors,
       maxNodes,
       maxErrors,
+      guard,
     ).run();
   }
 
@@ -279,6 +305,7 @@ final class _Execution {
     this.showInternalErrors,
     this.maxNodes,
     this.maxErrors,
+    this.guard,
   ) : variableValues = InputValues(variables);
 
   final GraphQLSchema<Object?> schema;
@@ -290,6 +317,7 @@ final class _Execution {
   final bool showInternalErrors;
   final int maxNodes;
   final int maxErrors;
+  final FieldGuard? guard;
   int _nodes = 0;
 
   /// The sub fields of each object type and field node list. All items of
@@ -499,6 +527,11 @@ final class _Execution {
       return null;
     }
     try {
+      FutureOr<GraphQLError?> check = guard?.check(type, def, context);
+      GraphQLError? denied = check is Future<GraphQLError?>
+          ? await check
+          : check;
+      if (denied != null) throw denied;
       InputValues args = Values.argumentValues(
         def.args,
         nodes.first.arguments,
@@ -610,6 +643,11 @@ final class _Execution {
           nodes,
           result,
         );
+        FutureOr<GraphQLError?> check = guard?.checkType(runtime, context);
+        GraphQLError? denied = check is Future<GraphQLError?>
+            ? await check
+            : check;
+        if (denied != null) throw denied;
         return _object(runtime, nodes, path, result);
       case NonNullType():
         throw StateError('Unreachable: non-null is handled above.');

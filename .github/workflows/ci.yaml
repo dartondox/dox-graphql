@@ -26,6 +26,20 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
           sdk: stable
+      # The other Dox packages come from their newest code (main, or the
+      # branch with the same name as this PR), not pub.dev. On a tag (a
+      # release) it does nothing. See the script.
+      - name: Use the newest Dox packages
+        run: ci/use-siblings.sh
+      # Caches the Rust dependencies of the native package clone.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: github.ref_type != 'tag'
+        with:
+          workspaces: |
+            ../dox-http-native/native -> target
+      # Builds the native library of the clone, for this machine only.
+      - name: Build the native clone
+        run: ci/use-siblings.sh build
       - name: Dart checks
         run: |
           dart pub get
@@ -46,6 +60,17 @@ jobs:
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
           sdk: stable
+      - name: Use the newest Dox packages
+        run: ci/use-siblings.sh
+      # Caches the Rust dependencies of the native package clone.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: github.ref_type != 'tag'
+        with:
+          workspaces: |
+            ../dox-http-native/native -> target
+      # Builds the native library of the clone, for this machine only.
+      - name: Build the native clone
+        run: ci/use-siblings.sh build
       - name: Resolve the workspace
         run: dart pub get
       # test-app holds the code the builders made: it must be the code

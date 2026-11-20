@@ -729,4 +729,41 @@ class R {
 ''', 'R.hello: "__hello" is not a valid GraphQL name.');
     });
   });
+
+  group('auth |', () {
+    test('auth: on queries, mutations and @ResolveField', () async {
+      String out = flat(
+        await _build('''
+@GraphQLType(auth: true)
+class Book {
+  final int id = 1;
+}
+
+class BookResolver {
+  @GraphQLQuery(auth: false)
+  String open() => 'o';
+
+  @GraphQLQuery()
+  String plain() => 'p';
+
+  @GraphQLMutation(auth: true)
+  int write() => 1;
+
+  @ResolveField(auth: true)
+  String secret(Book book) => 's';
+}
+'''),
+      );
+      expect(
+        out,
+        contains(flat("'open', graphqlString.nonNull, auth: false,")),
+      );
+      expect(out, contains(flat("'plain', graphqlString.nonNull, resolve:")));
+      expect(out, contains(flat("'write', graphqlInt.nonNull, auth: true,")));
+      expect(
+        out,
+        contains(flat("'secret', graphqlString.nonNull, auth: true,")),
+      );
+    });
+  });
 }

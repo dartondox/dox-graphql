@@ -19,6 +19,8 @@ class GraphQLType {
     this.description,
     this.queries = true,
     this.dto,
+    this.auth,
+    this.policy,
   });
 
   /// The type name. Default: the class name.
@@ -33,10 +35,25 @@ class GraphQLType {
   /// relations and custom resolvers.
   final bool queries;
 
-  /// Models only: a `@Dto` class. With it, the model gets the create,
-  /// update and delete mutations, and a client can set only the fields
-  /// of the DTO.
+  /// Models only: a `@Dto` class. With it, the model gets the create
+  /// mutation (and with [policy] the update and delete mutations), and a
+  /// client can set only the fields of the DTO.
   final Type? dto;
+
+  /// True: every field that gives this type needs a logged-in user:
+  /// the model queries, relations and custom resolvers too. False: those
+  /// fields are public. Null (default): they need a login only when
+  /// `GraphQLConfig.middleware` has the auth middleware. On a model, it
+  /// also sets the login rule of the delete mutation.
+  final bool? auth;
+
+  /// Models only: a `Policy` of dox_auth for the model, like `PostPolicy`.
+  /// With it and [dto], the model gets the update and delete mutations.
+  /// They load the row and ask the policy (`update`, `delete`) before
+  /// they write. A denied write fails with "Forbidden" (code
+  /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
+  /// usual. Without it, the model gets only the create mutation.
+  final Type? policy;
 }
 
 /// Leaves a field out of the GraphQL type.
@@ -47,7 +64,12 @@ class GraphQLIgnore {
 /// Makes a getter a field of the GraphQL type: a computed field. On a
 /// field, it sets another name or a description.
 class GraphQLField {
-  const GraphQLField({this.name, this.description, this.deprecationReason});
+  const GraphQLField({
+    this.name,
+    this.description,
+    this.deprecationReason,
+    this.auth,
+  });
 
   /// The field name. Default: the Dart name.
   final String? name;
@@ -55,6 +77,11 @@ class GraphQLField {
 
   /// Marks the field as deprecated, with this reason.
   final String? deprecationReason;
+
+  /// The default of a field of this type is public, so only true
+  /// matters: the field needs a logged-in user, even when the root field
+  /// above it is public.
+  final bool? auth;
 }
 
 /// Makes a method a root query field. The method name is the field name,
@@ -64,23 +91,43 @@ class GraphQLField {
 /// It is not named `Query`: dox_core and dox_orm export a `Query`
 /// annotation for OpenAPI, and a resolver file often imports them too.
 class GraphQLQuery {
-  const GraphQLQuery({this.name, this.description, this.deprecationReason});
+  const GraphQLQuery({
+    this.name,
+    this.description,
+    this.deprecationReason,
+    this.auth,
+  });
 
   /// The field name. Default: the method name.
   final String? name;
   final String? description;
   final String? deprecationReason;
+
+  /// True: the field needs a logged-in user. False: the field is public.
+  /// Null (default): it needs a login only when `GraphQLConfig.middleware`
+  /// has the auth middleware.
+  final bool? auth;
 }
 
 /// Makes a method a root mutation field. Take the input as a `@Dto`
 /// class: its rules run before the method.
 class GraphQLMutation {
-  const GraphQLMutation({this.name, this.description, this.deprecationReason});
+  const GraphQLMutation({
+    this.name,
+    this.description,
+    this.deprecationReason,
+    this.auth,
+  });
 
   /// The field name. Default: the method name.
   final String? name;
   final String? description;
   final String? deprecationReason;
+
+  /// True: the field needs a logged-in user. False: the field is public.
+  /// Null (default): it needs a login only when `GraphQLConfig.middleware`
+  /// has the auth middleware.
+  final bool? auth;
 }
 
 /// Adds a field to the GraphQL type of the first parameter of the
@@ -91,10 +138,20 @@ class GraphQLMutation {
 /// Future<User?> author(Post post, DoxGraphQLContext context) { ... }
 /// ```
 class ResolveField {
-  const ResolveField({this.name, this.description, this.deprecationReason});
+  const ResolveField({
+    this.name,
+    this.description,
+    this.deprecationReason,
+    this.auth,
+  });
 
   /// The field name. Default: the method name.
   final String? name;
   final String? description;
   final String? deprecationReason;
+
+  /// The default of a field of this type is public, so only true
+  /// matters: the field needs a logged-in user, even when the root field
+  /// above it is public.
+  final bool? auth;
 }

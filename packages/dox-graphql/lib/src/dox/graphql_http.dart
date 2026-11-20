@@ -20,9 +20,14 @@ class GraphQLHttpHandler {
     this.executor, {
     required this.graphiql,
     required String path,
+    this.logins = const <IAuthMiddleware>[],
   }) : _page = GraphiQLPage.html(path);
 
   final GraphQLExecutor<DoxGraphQLContext> executor;
+
+  /// The auth middleware, in their optional form. Each request runs them
+  /// only when a field needs the user.
+  final List<IAuthMiddleware> logins;
 
   /// Send the GraphiQL page to a browser that asks for HTML.
   final bool graphiql;
@@ -79,7 +84,7 @@ class GraphQLHttpHandler {
 
     GraphQLResponse result = await executor.execute(
       request,
-      context: DoxGraphQLContext(req, Dox().ioc),
+      context: DoxGraphQLContext(req, Dox().ioc, login: logins),
       allowMutations: !get,
     );
     if (result.errors.any((GraphQLError e) => e is MutationNotAllowedError)) {

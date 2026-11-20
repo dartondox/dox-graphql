@@ -3,6 +3,7 @@ import 'package:test/test.dart';
 import 'build_helper.dart';
 
 const String _imports = '''
+import 'package:dox_auth/dox_auth.dart' show Policy;
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
@@ -212,12 +213,42 @@ class Comment extends Model<Comment> {
       expect(out, isNot(contains("'comment'")));
     });
 
-    test('dto: gives create, update and delete', () async {
+    test('dto: without policy: gives only create', () async {
       String out = flat(
         await _build('''
 $_user
 @DoxModel()
 @GraphQLType(dto: CreatePostDto)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+  @Column()
+  int? userId;
+  @Column()
+  Status? status;
+  @Column()
+  DateTime? at;
+}
+''', dto: _postDto),
+      );
+      expect(out, contains(flat("('createPost',")));
+      expect(out, isNot(contains('updatePost')));
+      expect(out, isNot(contains('deletePost')));
+      expect(out, isNot(contains('UpdatePostInput')));
+      expect(out, isNot(contains('Gate')));
+    });
+
+    test('dto: and policy: give create, update and delete', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, policy: PostPolicy)
 class Post extends Model<Post> {
   @Column()
   String? title;
@@ -297,6 +328,54 @@ class Post extends Model<Post> {
       expect(
         out,
         contains(flat("if (input.has('userId')) model.userId = dto.userId;")),
+      );
+      expect(
+        out,
+        contains(flat("import 'package:dox_auth/dox_auth.dart' show Gate;")),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'if (model == null) return null; '
+            "await _allow(info, 'update', model);",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'if (model == null) return false; '
+            "await _allow(info, 'delete', model); await model.delete();",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            'if (!await Gate.allows(user, ability, model)) '
+            'throw GraphQLAuth.forbidden();',
+          ),
+        ),
+      );
+    });
+
+    test('policy: must be a Policy of the model', () async {
+      String out = await _build('''
+class OtherPolicy {}
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, policy: OtherPolicy)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+''', dto: _postDto);
+      expect(out, startsWith('ERROR:'));
+      expect(
+        out,
+        contains('Post: `policy:` must be a Policy of dox_auth for Post'),
       );
     });
   });
@@ -415,6 +494,52 @@ class NotADto {}
 @GraphQLType(dto: NotADto)
 class Post extends Model<Post> {}
 ''', 'Post: `dto:` must be a class with @Dto(), not NotADto.');
+    });
+
+    test('auth: goes on the model queries and writes', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel(table: 'posts')
+@GraphQLType(dto: CreatePostDto, auth: false, policy: PostPolicy)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+  @Column()
+  int? userId;
+  @Column()
+  Status? status;
+  @Column()
+  DateTime? at;
+
+  @GraphQLField(auth: true)
+  String? get secret => title;
+}
+''', dto: _postDto),
+      );
+      for (String name in <String>[
+        'posts',
+        'post',
+        'createPost',
+        'updatePost',
+        'deletePost',
+      ]) {
+        expect(out, contains("AutoField<Object?,DoxGraphQLContext>('$name',"));
+        expect(out, matches(RegExp("\\('$name',[^,]*,auth:false,")));
+      }
+      expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+      expect(
+        out,
+        contains(
+          flat("ObjectType<i1.Post, DoxGraphQLContext>('Post', auth: false,"),
+        ),
+      );
+      expect(out, isNot(contains(flat("'title', graphqlString, auth:"))));
     });
   });
 }

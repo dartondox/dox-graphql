@@ -2,6 +2,7 @@ import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/create_post.dart';
+import '../../policies/policies.dart';
 import '../comment/comment.model.dart';
 import '../image/image.model.dart';
 import '../tag/tag.model.dart';
@@ -12,7 +13,7 @@ part 'post.model.g.dart';
 enum PostStatus { draft, published }
 
 @DoxModel(table: 'posts')
-@GraphQLType(dto: CreatePostDto)
+@GraphQLType(dto: CreatePostDto, policy: PostPolicy, auth: false)
 class Post extends PostGenerator {
   @override
   List<String> get fillable => <String>['title', 'body', 'user_id'];

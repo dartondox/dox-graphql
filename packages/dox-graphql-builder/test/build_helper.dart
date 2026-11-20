@@ -15,6 +15,7 @@ const List<String> _roots = <String>[
   'package:dox_graphql/dox_graphql.dart',
   'package:dox_core/dox_core.dart',
   'package:dox_orm/dox_orm.dart',
+  'package:dox_auth/dox_auth.dart',
 ];
 
 final RegExp _directive = RegExp(

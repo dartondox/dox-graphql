@@ -127,7 +127,7 @@ import 'package:dox_graphql/dox_graphql.dart';
 
 GraphQLConfig graphqlConfig = GraphQLConfig(
   schema: schema, // a GraphQLSchema<DoxGraphQLContext>
-  middleware: <Object>[AuthMiddleware(optional: true)],
+  middleware: <Object>[AuthMiddleware()],
 );
 ```
 
@@ -145,19 +145,97 @@ Resolvers get a `DoxGraphQLContext`:
 Field<Object?, DoxGraphQLContext>(
   'me',
   userType,
-  resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) {
-    User? me = info.context.user<User>(); // null for a guest
+  resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) async {
+    User? me = await info.context.user<User>(); // null for a guest
     return me;
   },
 )
 ```
 
 - `info.context.request`: the `DoxRequest`.
-- `info.context.user<T>()` and `info.context.auth`: the logged-in user,
-  set by an auth middleware on the route.
+- `await info.context.user<T>()` and `await info.context.auth()`: the
+  logged-in user, or null for a guest. The auth middleware runs the
+  first time they are called, once per request.
 - `info.context.make<T>()`: a service from the Dox container.
 - `info.context.loader<K, V>(name, create)`: a `DataLoader` for this
   request only. The first call makes it; later calls get the same one.
+
+### Login
+
+The auth middleware is any `IAuthMiddleware` of dox_core, like
+`AuthMiddleware()` of dox_auth. With it in
+`middleware`, fields need a logged-in user by default. Without it,
+every field is public. `auth:` changes this:
+
+```dart
+@GraphQLQuery(auth: false) // public, even with the auth middleware
+List<Post> latestPosts() => ...;
+
+@GraphQLMutation(auth: true) // needs a login
+Future<Post> publish(int id) => ...;
+
+@GraphQLType(auth: true) // every field that gives a User needs a login
+class User extends UserGenerator {}
+```
+
+Which fields need a login:
+
+1. A field that gives a type with `auth: true`. This covers the model
+   queries, relations (like `post.user`), custom resolvers, and an
+   interface or union field whose value is of that type.
+2. Else, a field with `auth:` uses it.
+3. Else, a field that gives a type with `auth: false` is public.
+4. Else, a query or mutation field, and a field that gives an object
+   (a relation), use the default.
+5. Else (a text, number or enum field of a type), the field is public.
+
+- The auth middleware does not run on the route, and it never stops the
+  request. It runs the first time a field needs the user, once per
+  request. A request with only public fields does no token lookup.
+- A guest or a bad token gets no user. A field that needs a login then
+  fails with "Unauthenticated" and `extensions: {code: UNAUTHENTICATED}`.
+  Its resolver does not run. The other fields still give their data.
+- The status stays `200` with the error, as for any field error.
+- Other middleware in `middleware` runs before the user is known, so do
+  not put middleware there that reads `req.auth`. Check the user in the
+  resolver instead.
+- `auth: true` with no auth middleware stops the app at start, with the
+  name of the field or type.
+- In development, the app prints at start how many query, mutation and
+  relation fields are public and how many need a login.
+- Introspection still shows every field. The resolvers do not run, so no
+  data leaks.
+
+### Writes to a model
+
+`@GraphQLType(dto: CreatePostDto)` adds `createPost`. It follows the
+login rules above.
+
+`updatePost` and `deletePost` need a policy of dox_auth too:
+
+```dart
+@GraphQLType(dto: CreatePostDto, policy: PostPolicy)
+class Post extends PostGenerator {}
+
+class PostPolicy extends Policy<User, Post> {
+  bool update(User user, Post post) => post.userId == user.id;
+  bool delete(User user, Post post) => post.userId == user.id;
+
+  @override
+  Map<String, Function> get abilities => <String, Function>{
+    'update': update,
+    'delete': delete,
+  };
+}
+
+// in the setup() of a provider
+Gate.policy<Post>(PostPolicy());
+```
+
+They load the row, then ask the policy (`update` or `delete`) for that
+row. A denied write fails with "Forbidden" and
+`extensions: {code: FORBIDDEN}`, and nothing is written. Without
+`policy:`, there is no update or delete mutation.
 
 ### Defaults
 

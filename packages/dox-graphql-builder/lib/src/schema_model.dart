@@ -26,6 +26,7 @@ class FieldSpec {
     this.args = const <ArgSpec>[],
     this.isAsync = false,
     this.auto = false,
+    this.auth,
     this.column,
   });
 
@@ -49,6 +50,10 @@ class FieldSpec {
 
   /// A field made for a model (an `AutoField`).
   final bool auto;
+
+  /// The `auth:` of the field: true needs a login, false is public, null
+  /// uses the default of the server.
+  final bool? auth;
 
   /// Models only: the column of the field (the snake_case name for a
   /// relation). The field is left out when the model has it in `hidden`,
@@ -78,6 +83,12 @@ class ObjectSpec {
   /// Models: the `@Dto` class of `dto:`, for the create, update and
   /// delete mutations.
   ClassElement? dto;
+
+  /// The `auth:` of the type.
+  bool? auth;
+
+  /// Models: true with a `policy:`, for the update and delete mutations.
+  bool policy = false;
 
   /// Models: the primary key column, like `id`.
   String primaryKey = 'id';
