@@ -1,5 +1,8 @@
 ## Unreleased
 
+- `dox add graphql` (`graphql:install`) sets up an app: the packages,
+  `lib/config/graphql.dart`, the provider and build_runner. `--no-orm`
+  leaves out dox_graphql_orm. It never overwrites a file.
 - First version: the GraphQL engine, in pure Dart.
   - Type system: the built-in scalars, custom scalars, objects,
     interfaces, unions, enums, input objects, lists, non-null, arguments

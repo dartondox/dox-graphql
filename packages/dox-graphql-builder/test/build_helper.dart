@@ -77,6 +77,9 @@ Future<String> generate(Map<String, String> app) async {
     rootPackage: 'a',
     isInput: _isApp,
     outputs: <String, Object>{
+      // every package gets the empty schema: only the app counts
+      for (String package in _packages.keys.map((AssetId id) => id.package))
+        '$package|lib/generated/schema.g.dart': anything,
       'a|lib/generated/schema.g.dart': decodedMatches(
         predicate<String>((String s) {
           output = s;

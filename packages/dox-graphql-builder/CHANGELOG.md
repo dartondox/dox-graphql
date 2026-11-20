@@ -1,5 +1,8 @@
 ## Unreleased
 
+- An app with no GraphQL class yet still gets `lib/generated/schema.g.dart`.
+  The schema has one placeholder query, so the app starts. It goes away
+  with the first real query.
 - First version: builds `lib/generated/schema.g.dart` with
   `graphqlSchema` from `@GraphQLType`, `@GraphQLField`, `@GraphQLIgnore`,
   `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.

@@ -17,6 +17,18 @@ A GraphQL server engine for Dart. It follows the GraphQL spec (October
 The engine is pure Dart. It uses [gql](https://pub.dev/packages/gql) only
 to parse queries.
 
+## Install in a Dox app
+
+```bash
+dox add graphql
+```
+
+It adds the packages, writes `lib/config/graphql.dart` and
+`lib/providers/graphql_provider.dart`, and runs the builder. Use
+`dox graphql:install --no-orm` for an app without models. Then put
+`@GraphQLType()` on a model, run `dart run build_runner build`, start the
+app and open `/graphql`.
+
 ## Example
 
 ```dart

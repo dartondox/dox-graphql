@@ -470,8 +470,16 @@ class PostResolver {
       );
     });
 
-    test('no GraphQL class: no file', () async {
-      expect(await _build('class A {}'), 'NONE');
+    test('no GraphQL class: a schema with a placeholder query', () async {
+      String out = flat(await _build('class A {}'));
+      expect(out, contains(flat("'placeholder', graphqlBoolean.nonNull,")));
+      expect(out, contains('=>true)'));
+      expect(out, isNot(contains('dox_graphql_orm')));
+      expect(out, isNot(contains('mutation:')));
+    });
+
+    test('a real query: no placeholder', () async {
+      expect(await _build(_hello), isNot(contains('placeholder')));
     });
   });
 
