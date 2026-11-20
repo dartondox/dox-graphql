@@ -10,4 +10,14 @@ environment:
 workspace:
   - packages/dox-graphql
   - packages/dox-graphql-builder
+  - packages/dox-graphql-orm
   - packages/test-app
+
+# The tests use SQLite only: skip the build of the native Postgres and
+# MySQL drivers of dox_orm.
+hooks:
+  user_defines:
+    dox_postgres_native:
+      skip: true
+    dox_mysql_native:
+      skip: true

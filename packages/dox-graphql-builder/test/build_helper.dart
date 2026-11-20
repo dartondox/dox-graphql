@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:build/build.dart';
 import 'package:build_test/build_test.dart';
 import 'package:dox_graphql_builder/dox_graphql_builder.dart';
@@ -7,44 +9,40 @@ import 'package:test/test.dart';
 /// The real sources of the packages the test apps import, read once.
 final Map<AssetId, List<int>> _packages = <AssetId, List<int>>{};
 
-/// The packages a test app can import.
-const List<String> _wanted = <String>[
-  'dox_graphql',
-  'dox_core',
-  'dox_annotation',
-  'dox_validation',
-  'dox_cache',
-  'dox_http_native',
-  'dox_openapi',
-  'gql',
-  'meta',
-  'source_span',
-  'collection',
-  'path',
-  'term_glyph',
-  'crypto',
-  'typed_data',
-  'mime',
-  'string_scanner',
-  'uuid',
-  'bcrypt',
-  'matcher',
-  'stack_trace',
-  'ffi',
-  'hooks',
-  'code_assets',
-  'logging',
-  'pub_semver',
-  'yaml',
-  'fixnum',
-  'random_x',
+/// The libraries the test apps import. Every package they reach is
+/// loaded.
+const List<String> _roots = <String>[
+  'package:dox_graphql/dox_graphql.dart',
+  'package:dox_core/dox_core.dart',
+  'package:dox_orm/dox_orm.dart',
 ];
+
+final RegExp _directive = RegExp(
+  r'''^\s*(?:import|export|part)\s+['"]([^'"]+)['"]''',
+  multiLine: true,
+);
 
 Future<void> _load() async {
   if (_packages.isNotEmpty) return;
   PackageAssetReader reader = await PackageAssetReader.currentIsolate();
-  for (String package in _wanted) {
-    if (reader.packageConfig[package] == null) continue;
+  Set<String> packages = <String>{};
+  Set<AssetId> seen = <AssetId>{};
+  List<AssetId> todo = <AssetId>[
+    for (String uri in _roots) AssetId.resolve(Uri.parse(uri)),
+  ];
+  // follow the imports, to find the packages
+  while (todo.isNotEmpty) {
+    AssetId id = todo.removeLast();
+    if (!seen.add(id) || !await reader.canRead(id)) continue;
+    packages.add(id.package);
+    String text = utf8.decode(await reader.readAsBytes(id));
+    for (Match m in _directive.allMatches(text)) {
+      Uri uri = Uri.parse(m[1]!);
+      if (uri.scheme == 'dart') continue;
+      todo.add(AssetId.resolve(uri, from: id));
+    }
+  }
+  for (String package in packages) {
     await for (AssetId id in reader.findAssets(
       Glob('lib/**.dart'),
       package: package,

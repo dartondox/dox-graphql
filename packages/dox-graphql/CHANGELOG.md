@@ -52,6 +52,8 @@
 - `GraphQLDto.validate` runs the rules of a `@Dto` on mutation input. A
   failed check gives one error "Validation failed" with
   `extensions: {code: VALIDATION_FAILED, fields: {name: message}}`.
+- `GraphQLDto.validateSent`: checks only the keys the client sent, for an
+  update. The stored values of the other keys are not checked.
 - `AutoField` and `GraphQLConfig(autoResolvers: false)`: leave out the
   fields that the builder makes for models, and keep only your own
   resolvers.

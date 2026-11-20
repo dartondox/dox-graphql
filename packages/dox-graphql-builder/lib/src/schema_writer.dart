@@ -22,6 +22,9 @@ class SchemaWriter {
       ..writeln('// ignore_for_file: type=lint')
       ..writeln()
       ..writeln("import 'package:dox_graphql/dox_graphql.dart';");
+    if (reader.hasModels) {
+      out.writeln("import 'package:dox_graphql_orm/dox_graphql_orm.dart';");
+    }
     StringBuffer body = StringBuffer();
     _writeSchema(body);
     for (ObjectSpec object in reader.objects.values) {
@@ -32,6 +35,9 @@ class SchemaWriter {
     }
     for (InputSpec input in reader.inputs.values) {
       _writeInput(body, input);
+    }
+    for (String function in reader.functions) {
+      body.writeln(function);
     }
     // the imports last: writing the code finds the prefixes
     for (MapEntry<String, String> import in reader.imports.prefixes.entries) {
@@ -90,12 +96,27 @@ class SchemaWriter {
     if (object.description != null) {
       out.writeln('description: ${_string(object.description!)},');
     }
-    out.writeln('fields: () => <Field<$dartType, $_context>>[');
+    if (object.orm) {
+      // a column or relation in `hidden` of the model is left out, so it
+      // never leaks. With `visibleFields`, only those are shown.
+      out
+        ..writeln('fields: () {')
+        ..writeln('$dartType model = $dartType();')
+        ..writeln('List<String> hidden = model.hidden;')
+        ..writeln('List<String> visible = model.visibleFields;')
+        ..writeln(
+          'bool show(String name) => !hidden.contains(name) && '
+          '(visible.isEmpty || visible.contains(name));',
+        )
+        ..writeln('return <Field<$dartType, $_context>>[');
+    } else {
+      out.writeln('fields: () => <Field<$dartType, $_context>>[');
+    }
     for (FieldSpec field in object.fields) {
       out.writeln('${_field(field, dartType, 's')},');
     }
+    out.writeln(object.orm ? '];},' : '],');
     out
-      ..writeln('],')
       ..writeln(');')
       ..writeln();
   }
@@ -128,9 +149,7 @@ class SchemaWriter {
     out.write('resolve: ($parent $source, $_info)$async => ${field.resolve},)');
     String text = out.toString();
     String? column = field.column;
-    return column == null
-        ? text
-        : 'if (!hidden.contains(${_string(column)})) $text';
+    return column == null ? text : 'if (show(${_string(column)})) $text';
   }
 
   void _writeEnum(StringBuffer out, EnumSpec spec) {
@@ -175,7 +194,10 @@ class SchemaWriter {
     out
       ..writeln('};')
       ..writeln('}')
-      ..writeln()
+      ..writeln();
+    // a nested DTO is checked by the DTO it is in
+    if (!input.validated) return;
+    out
       ..writeln(
         'Future<$dto> ${input.validate}(InputValues v, $_context context) {',
       )
