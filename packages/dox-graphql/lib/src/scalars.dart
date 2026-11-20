@@ -245,3 +245,55 @@ final class _IdType extends ScalarType<String> {
     };
   }
 }
+
+/// The `DateTime` scalar: a date and time as ISO 8601 text, like
+/// `2026-11-20T10:00:00.000Z`, always in UTC. Resolvers return and get a
+/// `DateTime`. Input text with no offset is read as UTC.
+/// It is not a built-in scalar, so a schema has it only when a field or
+/// argument uses it.
+final ScalarType<DateTime> graphqlDateTime = _DateTimeType();
+
+final class _DateTimeType extends ScalarType<DateTime> {
+  _DateTimeType()
+    : super(
+        'DateTime',
+        description: 'A date and time as ISO 8601 text.',
+        specifiedByUrl: 'https://scalars.graphql.org/andimarek/date-time',
+      );
+
+  @override
+  Object serialize(Object value) {
+    if (value is DateTime) return value.toUtc().toIso8601String();
+    if (value is String && DateTime.tryParse(value) != null) return value;
+    throw GraphQLError('DateTime cannot represent value: $value');
+  }
+
+  @override
+  DateTime parseValue(Object value) {
+    DateTime? date = value is String ? DateTime.tryParse(value) : null;
+    if (date == null) {
+      throw GraphQLError('DateTime cannot represent value: $value');
+    }
+    if (date.isUtc) return date;
+    // text with no offset, like `2026-11-20T10:00:00` or `2026-11-20`, is
+    // UTC: the same wall time, not the time zone of the server
+    return DateTime.utc(
+      date.year,
+      date.month,
+      date.day,
+      date.hour,
+      date.minute,
+      date.second,
+      date.millisecond,
+      date.microsecond,
+    );
+  }
+
+  @override
+  DateTime parseLiteral(ValueNode node) {
+    if (node is StringValueNode) return parseValue(node.value);
+    throw GraphQLError(
+      'DateTime cannot represent a non string value: ${printNode(node)}',
+    );
+  }
+}

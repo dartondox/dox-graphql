@@ -13,6 +13,8 @@ on:
   push:
     tags:
       - 'dox_graphql-v*'
+      - 'dox_graphql_builder-v*'
+      - 'dox_graphql_orm-v*'
 
 permissions:
   contents: read

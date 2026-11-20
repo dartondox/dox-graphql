@@ -82,7 +82,7 @@ final class _VariableUsage {
   _VariableUsage(this.node, this.type, this.hasDefault);
 
   final VariableNode node;
-  final GraphQLType? type;
+  final GraphQLTypeRef? type;
   final bool hasDefault;
 }
 
@@ -217,7 +217,7 @@ final class DocumentValidator {
       if (!varNames.add(name)) {
         _error('There can be only one variable named "\$$name".', <Node>[def]);
       }
-      GraphQLType? type = _typeOf(def.type);
+      GraphQLTypeRef? type = _typeOf(def.type);
       if (type != null && !type.isInputType) {
         _error(
           'Variable "\$$name" cannot be non-input type '
@@ -241,7 +241,7 @@ final class DocumentValidator {
   }
 
   /// The type of a type node. Reports unknown names.
-  GraphQLType? _typeOf(TypeNode node) {
+  GraphQLTypeRef? _typeOf(TypeNode node) {
     NamedTypeNode named = _namedNode(node);
     if (schema.type(named.name.value) == null) {
       _error('Unknown type "${named.name.value}".', <Node>[named]);
@@ -451,7 +451,12 @@ final class DocumentValidator {
   /// is not known; then only variable uses are noted. [owner] is the
   /// nearest argument, input field or variable definition: gql keeps no
   /// location on literals, so errors point at the owner.
-  void _value(ValueNode node, GraphQLType? type, bool hasDefault, Node owner) {
+  void _value(
+    ValueNode node,
+    GraphQLTypeRef? type,
+    bool hasDefault,
+    Node owner,
+  ) {
     if (node is VariableNode) {
       _uses.variables.add(_VariableUsage(node, type, hasDefault));
       return;
@@ -755,8 +760,8 @@ final class DocumentValidator {
       String name = first.node.name.value;
       used.add(name);
       VariableDefinitionNode? def = defs[name];
-      GraphQLType? location = first.type;
-      GraphQLType? varType = def == null
+      GraphQLTypeRef? location = first.type;
+      GraphQLTypeRef? varType = def == null
           ? null
           : Values.typeFromAst(schema, def.type);
       if (def != null &&
@@ -803,9 +808,9 @@ final class DocumentValidator {
   }
 
   bool _allowed(
-    GraphQLType varType,
+    GraphQLTypeRef varType,
     VariableDefinitionNode def,
-    GraphQLType location,
+    GraphQLTypeRef location,
     bool locationHasDefault,
   ) {
     if (location is NonNullType && varType is! NonNullType) {
@@ -817,7 +822,7 @@ final class DocumentValidator {
     return _compatible(varType, location);
   }
 
-  bool _compatible(GraphQLType v, GraphQLType l) {
+  bool _compatible(GraphQLTypeRef v, GraphQLTypeRef l) {
     if (l is NonNullType) {
       return v is NonNullType && _compatible(v.ofType, l.ofType);
     }
@@ -1128,7 +1133,7 @@ final class _OverlapChecker {
     return true;
   }
 
-  bool _typesConflict(GraphQLType a, GraphQLType b) {
+  bool _typesConflict(GraphQLTypeRef a, GraphQLTypeRef b) {
     if (a is ListType) {
       return b is ListType ? _typesConflict(a.ofType, b.ofType) : true;
     }

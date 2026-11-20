@@ -533,7 +533,7 @@ final class _Execution {
   Object? _fail(
     Object error,
     StackTrace stackTrace,
-    GraphQLType type,
+    GraphQLTypeRef type,
     List<FieldNode> nodes,
     ResponsePath path,
   ) {
@@ -561,7 +561,7 @@ final class _Execution {
   }
 
   Future<Object?> _complete(
-    GraphQLType type,
+    GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
     List<FieldNode> nodes,
     ResponsePath path,
@@ -619,7 +619,7 @@ final class _Execution {
   }
 
   Future<Object?> _item(
-    GraphQLType type,
+    GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
     List<FieldNode> nodes,
     ResponsePath path,

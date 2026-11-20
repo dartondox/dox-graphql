@@ -1,0 +1,25 @@
+name: dox_graphql_builder
+description: 'The build_runner builder of dox_graphql: it makes the GraphQL schema of a Dox app from @GraphQLType, @GraphQLQuery and @GraphQLMutation.'
+version: 0.0.1
+homepage: https://dartondox.dev
+repository: https://github.com/dartondox/dox-graphql
+
+environment:
+  sdk: ^3.13.0
+resolution: workspace
+
+dependencies:
+  analyzer: ^14.7.0
+  build: ^5.0.0
+  dart_style: ^3.1.14
+  # DtoReader: the keys and types of @Dto classes
+  dox_builder: ^3.2.2
+  glob: ^2.2.0
+  source_gen: ^4.3.1
+
+dev_dependencies:
+  build_test: ^3.5.23
+  # the tests read the real annotations
+  dox_graphql: ^0.0.1
+  lints: ^6.1.0
+  test: ^1.33.0

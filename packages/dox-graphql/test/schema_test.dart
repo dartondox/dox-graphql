@@ -13,7 +13,7 @@ ObjectType<Object?, Object?> _object(
 
 Field<Object?, Object?> _f(
   String name,
-  GraphQLType type, {
+  GraphQLTypeRef type, {
   List<Argument> args = const <Argument>[],
 }) => Field<Object?, Object?>(name, type, args: args);
 

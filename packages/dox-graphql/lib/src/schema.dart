@@ -363,7 +363,10 @@ final class _SchemaChecker {
     }
   }
 
-  bool _isValidImplementationType(GraphQLType field, GraphQLType expected) {
+  bool _isValidImplementationType(
+    GraphQLTypeRef field,
+    GraphQLTypeRef expected,
+  ) {
     if (expected is NonNullType) {
       return field is NonNullType &&
           _isValidImplementationType(field.ofType, expected.ofType);
@@ -458,9 +461,9 @@ final class _SchemaChecker {
   ) {
     if (done.contains(type) && !identical(type, start)) return;
     for (InputField f in type.fields) {
-      GraphQLType ft = f.type;
+      GraphQLTypeRef ft = f.type;
       if (ft is! NonNullType) continue;
-      GraphQLType inner = ft.ofType;
+      GraphQLTypeRef inner = ft.ofType;
       if (inner is! InputObjectType) continue;
       if (identical(inner, start)) {
         String via = <String>[
