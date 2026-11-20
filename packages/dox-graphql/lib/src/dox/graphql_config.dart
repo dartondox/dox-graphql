@@ -55,7 +55,7 @@ class GraphQLConfig {
 
   /// The list, find, create, update and delete fields that
   /// `dox_graphql_builder` makes for models. False leaves them out, so
-  /// the app has only its own `@Query` and `@Mutation` resolvers. The
+  /// the app has only its own `@GraphQLQuery` and `@GraphQLMutation` resolvers. The
   /// model types stay, for relations and resolvers.
   final bool autoResolvers;
 

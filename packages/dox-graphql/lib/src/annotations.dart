@@ -60,8 +60,11 @@ class GraphQLField {
 /// Makes a method a root query field. The method name is the field name,
 /// the parameters are the arguments, and the return type is the field
 /// type.
-class Query {
-  const Query({this.name, this.description, this.deprecationReason});
+///
+/// It is not named `Query`: dox_core and dox_orm export a `Query`
+/// annotation for OpenAPI, and a resolver file often imports them too.
+class GraphQLQuery {
+  const GraphQLQuery({this.name, this.description, this.deprecationReason});
 
   /// The field name. Default: the method name.
   final String? name;
@@ -71,8 +74,8 @@ class Query {
 
 /// Makes a method a root mutation field. Take the input as a `@Dto`
 /// class: its rules run before the method.
-class Mutation {
-  const Mutation({this.name, this.description, this.deprecationReason});
+class GraphQLMutation {
+  const GraphQLMutation({this.name, this.description, this.deprecationReason});
 
   /// The field name. Default: the method name.
   final String? name;

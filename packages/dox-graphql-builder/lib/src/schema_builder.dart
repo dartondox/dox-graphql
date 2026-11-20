@@ -11,7 +11,7 @@ import 'schema_writer.dart';
 ///
 /// It reads every library in `lib/` and finds:
 /// - classes with `@GraphQLType()`: the object types,
-/// - classes with `@Query()`, `@Mutation()` or `@ResolveField()` methods:
+/// - classes with `@GraphQLQuery()`, `@GraphQLMutation()` or `@ResolveField()` methods:
 ///   the resolvers.
 ///
 /// A type that GraphQL can not show stops the build with an error that
@@ -73,7 +73,7 @@ class GraphQLSchemaBuilder implements Builder {
     }
     if (reader.query.isEmpty) {
       throw StateError(
-        'The GraphQL schema has no query. Add @Query() to a method of a '
+        'The GraphQL schema has no query. Add @GraphQLQuery() to a method of a '
         'resolver class.',
       );
     }

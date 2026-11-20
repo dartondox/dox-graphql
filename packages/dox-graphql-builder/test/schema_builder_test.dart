@@ -3,14 +3,14 @@ import 'package:test/test.dart';
 import 'build_helper.dart';
 
 const String _imports = '''
-import 'package:dox_core/dox_core.dart' hide Query;
+import 'package:dox_core/dox_core.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 ''';
 
 /// A resolver with one query, so a schema is valid.
 const String _hello = '''
 class HelloResolver {
-  @Query()
+  @GraphQLQuery()
   String hello() => 'hi';
 }
 ''';
@@ -147,6 +147,79 @@ class Post {
       expect(out, isNot(contains('notAField')));
     });
 
+    test('fields of a superclass, with its type arguments', () async {
+      String out = flat(
+        await _build('''
+$_hello
+class Base<T> {
+  Base(this.value, this.name);
+  final T value;
+  final String name;
+  String _secret = '';
+
+  @GraphQLField()
+  String get shout => name;
+}
+
+@GraphQLType()
+class Item extends Base<int> {
+  Item(super.value, super.name, this.extra);
+  final bool extra;
+
+  @override
+  final String name = 'item';
+}
+'''),
+      );
+      expect(out, contains(flat("'extra', graphqlBoolean.nonNull")));
+      expect(out, contains(flat("'name', graphqlString.nonNull")));
+      expect(out, contains(flat("'value', graphqlInt.nonNull")));
+      expect(out, contains(flat("'shout', graphqlString.nonNull")));
+      expect(out, isNot(contains('secret')));
+      // the override in Item is read once
+      expect(RegExp("'name'").allMatches(out), hasLength(1));
+    });
+
+    test('a nested list argument is cast at each level', () async {
+      String out = flat(
+        await _build('''
+class R {
+  @GraphQLQuery()
+  int sum(List<List<int>> rows, {List<String?>? tags}) => 1;
+}
+'''),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "Argument('rows', graphqlInt.nonNull.list.nonNull.list.nonNull)",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "(switch (info.args.get<Object?>('rows')) { List<Object?> l1 => "
+            '<List<int>>[for (Object? x1 in l1) (switch (x1) { '
+            'List<Object?> l2 => <int>[for (Object? x2 in l2) (x2 as int)], '
+            '_ => null })!], _ => null })!',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "tags: (switch (info.args.get<Object?>('tags')) { List<Object?> "
+            'l1 => <String?>[for (Object? x1 in l1) (x1 as String?)], '
+            '_ => null })',
+          ),
+        ),
+      );
+    });
+
     test('a type points at another type', () async {
       String out = flat(
         await _build('''
@@ -184,7 +257,7 @@ class PostResolver {
   final PostService? optional;
 
   /// The posts.
-  @Query()
+  @GraphQLQuery()
   Future<List<String>> posts(
     int id,
     DoxGraphQLContext context, {
@@ -230,7 +303,9 @@ class PostResolver {
             "limit: info.args.get<int>('limit')!, "
             "search: info.args.get<String>('search'), "
             "sort: info.args.get<i1.Sort>('sort')!, "
-            "tags: info.args.list<int>('tags')!, "
+            "tags: (switch (info.args.get<Object?>('tags')) { "
+            'List<Object?> l1 => <int>[for (Object? x1 in l1) (x1 as int)], '
+            '_ => null })!, '
             "title: info.args.get<String>('title')!, "
             "on: info.args.get<bool>('on')!, "
             "ratio: info.args.get<double>('ratio'))",
@@ -239,11 +314,11 @@ class PostResolver {
       );
     });
 
-    test('@Query(name:) and a mutation root only when needed', () async {
+    test('@GraphQLQuery(name:) and a mutation root only when needed', () async {
       String out = flat(
         await _build('''
 class R {
-  @Query(name: 'greeting', description: 'Says hi.')
+  @GraphQLQuery(name: 'greeting', description: 'Says hi.')
   String hello() => 'hi';
 }
 '''),
@@ -297,7 +372,7 @@ $_imports
 import 'dto.dart';
 $_hello
 class PostResolver {
-  @Mutation()
+  @GraphQLMutation()
   Future<int> createPost(CreatePostDto input, {CreatePostDto? other}) async => 1;
 }
 ''',
@@ -420,7 +495,7 @@ class Post {
     test('a return type GraphQL can not show', () async {
       await expectError('''
 class R {
-  @Query()
+  @GraphQLQuery()
   Future<void> hello() async {}
 }
 ''', 'R.hello: the type void can not be a GraphQL field.');
@@ -430,7 +505,7 @@ class R {
       await expectError('''
 class Thing {}
 class R {
-  @Query()
+  @GraphQLQuery()
   Thing thing() => Thing();
 }
 ''', 'R.thing: the type Thing can not be a GraphQL field.');
@@ -441,7 +516,7 @@ class R {
 @GraphQLType()
 class Post { final int id = 1; }
 class R {
-  @Query()
+  @GraphQLQuery()
   int hello(Post post) => 1;
 }
 ''', 'R.hello(post): the type Post can not be a GraphQL argument.');
@@ -459,7 +534,7 @@ class Line {
   final String name;
 }
 class R {
-  @Query()
+  @GraphQLQuery()
   int hello(List<Line> lines) => 1;
 }
 ''',
@@ -484,9 +559,9 @@ class Upload {
   final Map<String, dynamic> meta;
 }
 class R {
-  @Query()
+  @GraphQLQuery()
   int hello() => 1;
-  @Mutation()
+  @GraphQLMutation()
   int upload(Upload input) => 1;
 }
 ''',
@@ -503,7 +578,7 @@ class R {
     test('a default value with no GraphQL form', () async {
       await expectError('''
 class R {
-  @Query()
+  @GraphQLQuery()
   int hello({Duration wait = const Duration(seconds: 1)}) => 1;
 }
 ''', 'R.hello(wait): the type Duration can not be a GraphQL argument.');
@@ -546,9 +621,9 @@ class B { final int id = 1; }
     test('two root fields with one name', () async {
       await expectError('''
 class R {
-  @Query()
+  @GraphQLQuery()
   String hello() => 'hi';
-  @Query(name: 'hello')
+  @GraphQLQuery(name: 'hello')
   String other() => 'hi';
 }
 ''', 'R.other: the field "hello" of Query is made twice: here and in R.hello.');
@@ -595,7 +670,7 @@ class Post { final int id = 1; }
     test('an abstract resolver', () async {
       await expectError('''
 abstract class R {
-  @Query()
+  @GraphQLQuery()
   String hello() => 'hi';
 }
 ''', 'R: a resolver class can not be abstract or generic');
@@ -605,7 +680,7 @@ abstract class R {
       await expectError('''
 class R {
   R.named();
-  @Query()
+  @GraphQLQuery()
   String hello() => 'hi';
 }
 ''', 'R: a resolver class needs an unnamed constructor.');
@@ -614,16 +689,16 @@ class R {
     test('a static resolver method', () async {
       await expectError('''
 class R {
-  @Query()
+  @GraphQLQuery()
   static String hello() => 'hi';
 }
-''', 'R.hello: @Query() needs a public instance method.');
+''', 'R.hello: @GraphQLQuery() needs a public instance method.');
     });
 
     test('a name GraphQL does not allow', () async {
       await expectError('''
 class R {
-  @Query(name: '__hello')
+  @GraphQLQuery(name: '__hello')
   String hello() => 'hi';
 }
 ''', 'R.hello: "__hello" is not a valid GraphQL name.');

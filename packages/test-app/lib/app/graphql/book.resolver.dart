@@ -10,10 +10,10 @@ class BookResolver {
   final BookRepository repo;
   final AuthorRepository authors;
 
-  @Query(description: 'The latest books.')
+  @GraphQLQuery(description: 'The latest books.')
   List<BookItem> books({int limit = 20}) => repo.latest(limit);
 
-  @Query()
+  @GraphQLQuery()
   BookItem? book(int id) {
     for (BookItem b in repo.books) {
       if (b.id == id) return b;
@@ -21,10 +21,10 @@ class BookResolver {
     return null;
   }
 
-  @Query()
+  @GraphQLQuery()
   String? me(DoxGraphQLContext context) => context.user<String>();
 
-  @Mutation()
+  @GraphQLMutation()
   Future<BookItem> createBook(CreateBook input) async => repo.add(input);
 
   @ResolveField()

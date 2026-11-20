@@ -2,13 +2,20 @@ import 'package:dox_graphql/dox_graphql.dart';
 
 enum Genre { novel, poetry }
 
-/// A writer of books. A plain class: it has no table.
+/// A person. Not a GraphQL type itself.
+class Person {
+  Person({required this.name});
+
+  final String name;
+}
+
+/// A writer of books. A plain class: it has no table. `name` comes from
+/// [Person].
 @GraphQLType()
-class Author {
-  Author({required this.id, required this.name});
+class Author extends Person {
+  Author({required this.id, required super.name});
 
   final int id;
-  final String name;
 }
 
 /// A book.

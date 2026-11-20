@@ -7,9 +7,10 @@ import 'package:dox_graphql_test_app/app/graphql/types.dart' as i1;
 import 'package:dox_graphql_test_app/app/repositories/repositories.dart' as i2;
 import 'package:dox_graphql_test_app/app/graphql/book.resolver.dart' as i3;
 import 'package:dox_graphql_test_app/app/dtos/create_book.dart' as i4;
+import 'package:dox_graphql_test_app/app/graphql/math.resolver.dart' as i5;
 
 /// The GraphQL schema of the app, made from the
-/// `@GraphQLType`, `@Query` and `@Mutation` annotations.
+/// `@GraphQLType`, `@GraphQLQuery` and `@GraphQLMutation` annotations.
 /// Use it in `GraphQLConfig(schema: graphqlSchema)`.
 final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
     GraphQLSchema<DoxGraphQLContext>(
@@ -48,6 +49,36 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
                   info.context.make<i2.AuthorRepository>(),
                 ).me(info.context),
           ),
+          Field<Object?, DoxGraphQLContext>(
+            'rowSums',
+            graphqlInt.nonNull.list.nonNull,
+            description: 'The sum of each row.',
+            args: <Argument>[
+              Argument('rows', graphqlInt.nonNull.list.nonNull.list.nonNull),
+            ],
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                i5.MathResolver().rowSums(
+                  (switch (info.args.get<Object?>('rows')) {
+                    List<Object?> l1 => <List<int>>[
+                      for (Object? x1 in l1)
+                        (switch (x1) {
+                          List<Object?> l2 => <int>[
+                            for (Object? x2 in l2) (x2 as int),
+                          ],
+                          _ => null,
+                        })!,
+                    ],
+                    _ => null,
+                  })!,
+                ),
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'path',
+            graphqlString.nonNull,
+            description: 'The path of the request.',
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                i5.MathResolver().path(info.context),
+          ),
         ],
       ),
       mutation: ObjectType<Object?, DoxGraphQLContext>(
@@ -76,7 +107,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
 final ObjectType<i1.Author, DoxGraphQLContext> _tAuthor =
     ObjectType<i1.Author, DoxGraphQLContext>(
       'Author',
-      description: 'A writer of books. A plain class: it has no table.',
+      description: 'A writer of books. A plain class: it has no table. `name` comes from\n[Person].',
       fields: () => <Field<i1.Author, DoxGraphQLContext>>[
         Field<i1.Author, DoxGraphQLContext>(
           'id',

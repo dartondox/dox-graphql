@@ -50,6 +50,31 @@ void main() {
     });
   });
 
+  test('a nested list argument has the right type at each level', () async {
+    Map<String, Object?> res = await run(
+      client,
+      r'query Q($r: [[Int!]!]!) { a: rowSums(rows: [[1, 2], [3]]) '
+      r'b: rowSums(rows: $r) }',
+      variables: <String, Object?>{
+        'r': <Object?>[
+          <Object?>[4, 5],
+          <Object?>[],
+        ],
+      },
+    );
+    expect(res, <String, Object?>{
+      'data': <String, Object?>{
+        'a': <Object?>[3, 3],
+        'b': <Object?>[9, 0],
+      },
+    });
+  });
+
+  test('a resolver that imports dox_core too', () async {
+    Map<String, Object?> res = await run(client, '{ path }');
+    expect(res['data'], <String, Object?>{'path': '/graphql'});
+  });
+
   test('an argument with no default is required', () async {
     Map<String, Object?> res = await run(client, '{ book { id } }');
     expect(res['errors'], isNotEmpty);

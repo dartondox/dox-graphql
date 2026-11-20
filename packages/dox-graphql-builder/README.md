@@ -1,7 +1,7 @@
 # dox_graphql_builder
 
 The `build_runner` builder of [dox_graphql](https://pub.dev/packages/dox_graphql).
-It reads `@GraphQLType`, `@Query`, `@Mutation` and the other annotations of
+It reads `@GraphQLType`, `@GraphQLQuery`, `@GraphQLMutation` and the other annotations of
 your app, and writes `lib/generated/schema.g.dart` with `graphqlSchema`.
 
 ```yaml

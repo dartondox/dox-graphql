@@ -247,7 +247,8 @@ final class _IdType extends ScalarType<String> {
 }
 
 /// The `DateTime` scalar: a date and time as ISO 8601 text, like
-/// `2026-11-20T10:00:00.000Z`. Resolvers return and get a `DateTime`.
+/// `2026-11-20T10:00:00.000Z`, always in UTC. Resolvers return and get a
+/// `DateTime`.
 /// It is not a built-in scalar, so a schema has it only when a field or
 /// argument uses it.
 final ScalarType<DateTime> graphqlDateTime = _DateTimeType();
@@ -262,7 +263,7 @@ final class _DateTimeType extends ScalarType<DateTime> {
 
   @override
   Object serialize(Object value) {
-    if (value is DateTime) return value.toIso8601String();
+    if (value is DateTime) return value.toUtc().toIso8601String();
     if (value is String && DateTime.tryParse(value) != null) return value;
     throw GraphQLError('DateTime cannot represent value: $value');
   }

@@ -46,7 +46,9 @@ class SchemaWriter {
   void _writeSchema(StringBuffer out) {
     out
       ..writeln('/// The GraphQL schema of the app, made from the')
-      ..writeln('/// `@GraphQLType`, `@Query` and `@Mutation` annotations.')
+      ..writeln(
+        '/// `@GraphQLType`, `@GraphQLQuery` and `@GraphQLMutation` annotations.',
+      )
       ..writeln('/// Use it in `GraphQLConfig(schema: graphqlSchema)`.')
       ..writeln(
         'final GraphQLSchema<$_context> graphqlSchema = '

@@ -133,7 +133,7 @@ class SchemaReader {
       _fail(
         where,
         '`dto:` works only on a model of dox_orm. A plain class has no '
-        'table to write to: write a @Mutation() in a resolver.',
+        'table to write to: write a @GraphQLMutation() in a resolver.',
         element,
       );
     }
@@ -156,24 +156,35 @@ class SchemaReader {
   /// The public fields, and the getters with `@GraphQLField()`.
   void _readPlainFields(ObjectSpec spec) {
     ClassElement element = spec.element;
-    // ponytail: fields of a superclass are not read. Read
-    // element.allSupertypes when a type needs them.
-    for (FieldElement field in element.fields) {
-      if (field.isStatic || field.isPrivate || !field.isOriginDeclaration) {
-        continue;
+    Set<String> seen = <String>{};
+    // the class, then its superclasses up to Object. The getters of an
+    // InterfaceType have the type arguments of the superclass filled in.
+    for (
+      InterfaceType? type = element.thisType;
+      type != null && !type.isDartCoreObject;
+      type = type.superclass
+    ) {
+      for (GetterElement getter in type.getters) {
+        if (getter.isStatic || !seen.add(getter.displayName)) continue;
+        if (getter.isOriginVariable) {
+          Element field = getter.variable;
+          if (getter.isPrivate || annotation(field, 'GraphQLIgnore') != null) {
+            continue;
+          }
+          _addMember(spec, field, getter.displayName, getter.returnType, field);
+          continue;
+        }
+        if (!getter.isOriginDeclaration) continue;
+        if (annotation(getter, 'GraphQLField') == null) continue;
+        if (getter.isPrivate) {
+          _fail(
+            '${element.displayName}.${getter.displayName}',
+            '@GraphQLField() needs a public instance getter.',
+            getter,
+          );
+        }
+        _addMember(spec, getter, getter.displayName, getter.returnType, getter);
       }
-      if (annotation(field, 'GraphQLIgnore') != null) continue;
-      _addMember(spec, field, field.displayName, field.type, field);
-    }
-    for (GetterElement getter in element.getters) {
-      if (!getter.isOriginDeclaration) continue;
-      DartObject? field = annotation(getter, 'GraphQLField');
-      if (field == null) continue;
-      String where = '${element.displayName}.${getter.displayName}';
-      if (getter.isStatic || getter.isPrivate) {
-        _fail(where, '@GraphQLField() needs a public instance getter.', getter);
-      }
-      _addMember(spec, getter, getter.displayName, getter.returnType, getter);
     }
     for (MethodElement method in element.methods) {
       if (annotation(method, 'GraphQLField') == null) continue;
@@ -227,13 +238,17 @@ class SchemaReader {
   }
 
   static String? _rootKind(MethodElement method) {
-    for (String kind in const <String>['Query', 'Mutation', 'ResolveField']) {
+    for (String kind in const <String>[
+      'GraphQLQuery',
+      'GraphQLMutation',
+      'ResolveField',
+    ]) {
       if (annotation(method, kind) != null) return kind;
     }
     return null;
   }
 
-  /// Reads the `@Query`, `@Mutation` and `@ResolveField` methods of
+  /// Reads the `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField` methods of
   /// [element]. The class is made for each call, with its constructor
   /// parameters from the Dox container.
   void readResolver(ClassElement element) {
@@ -360,9 +375,9 @@ class SchemaReader {
       isAsync: isAsync,
     );
     switch (kind) {
-      case 'Query':
+      case 'GraphQLQuery':
         _addField(query, field, 'Query', method);
-      case 'Mutation':
+      case 'GraphQLMutation':
         _addField(mutation, field, 'Mutation', method);
       default:
         _addField(parent!.fields, field, parent.name, method);
@@ -387,14 +402,32 @@ class SchemaReader {
         return (call, true);
       }
       if (type.isDartCoreList) {
-        String item = imports.code(type.typeArguments.first);
-        return ('info.args.list<$item>($quoted)$bang', isAsync);
+        return (_cast(type, 'info.args.get<Object?>($quoted)', 1), isAsync);
       }
     }
     return (
       'info.args.get<${imports.nonNullCode(type)}>($quoted)$bang',
       isAsync,
     );
+  }
+
+  /// Code that turns the argument value [value] into a [type]. A list is
+  /// copied item by item, so a nested list like `List<List<int>>` gets
+  /// the right type at every level. [depth] keeps the names of nested
+  /// patterns apart.
+  String _cast(DartType type, String value, int depth) {
+    if (type is InterfaceType && type.isDartCoreList) {
+      DartType item = type.typeArguments.first;
+      String inner = _cast(item, 'x$depth', depth + 1);
+      String list =
+          'switch ($value) { List<Object?> l$depth => '
+          '<${imports.code(item)}>[for (Object? x$depth in l$depth) $inner], '
+          '_ => null }';
+      return type.nullabilitySuffix == NullabilitySuffix.question
+          ? '($list)'
+          : '($list)!';
+    }
+    return '($value as ${imports.code(type)})';
   }
 
   /// True for the `DoxGraphQLContext` of dox_graphql: it is given, not an

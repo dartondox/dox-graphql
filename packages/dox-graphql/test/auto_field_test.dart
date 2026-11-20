@@ -39,6 +39,12 @@ GraphQLSchema<Object?> schemaWith({bool customMutation = true}) {
         ),
         AutoField<Object?, Object?>('onlyAuto', onlyAuto),
         Field<Object?, Object?>(
+          'local',
+          graphqlDateTime,
+          resolve: (Object? _, ResolveInfo<Object?> info) =>
+              DateTime.utc(2026, 11, 20, 10).toLocal(),
+        ),
+        Field<Object?, Object?>(
           'echo',
           graphqlDateTime,
           args: <Argument>[Argument('at', graphqlDateTime.nonNull)],
@@ -71,7 +77,7 @@ void main() {
       GraphQLSchema<Object?> schema = AutoField.leaveOut(schemaWith());
       expect(
         schema.query.fields.map((Field<Object?, Object?> f) => f.name),
-        <String>['echo'],
+        <String>['local', 'echo'],
       );
       expect(
         schema.mutation!.fields.map((Field<Object?, Object?> f) => f.name),
@@ -111,6 +117,13 @@ void main() {
       );
       expect(res, <String, Object?>{
         'data': <String, Object?>{'echo': '2026-11-21T10:00:00.000Z'},
+      });
+    });
+
+    test('a local time is sent in UTC', () async {
+      Map<String, Object?> res = await run(schemaWith(), '{ local }');
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{'local': '2026-11-20T10:00:00.000Z'},
       });
     });
 

@@ -44,10 +44,10 @@
 - The engine limit defaults are constants:
   `GraphQLExecutor.defaultMaxDepth` and the others.
 - Annotations for `dox_graphql_builder`: `@GraphQLType`, `@GraphQLField`,
-  `@GraphQLIgnore`, `@Query`, `@Mutation` and `@ResolveField`.
+  `@GraphQLIgnore`, `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.
 - The base class of all types is now `GraphQLTypeRef`, so the name
   `GraphQLType` is free for the annotation.
-- `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text.
+- `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text in UTC.
 - `GraphQLDto.validate` runs the rules of a `@Dto` on mutation input. A
   failed check gives one error "Validation failed" with
   `extensions: {code: VALIDATION_FAILED, fields: {name: message}}`.
