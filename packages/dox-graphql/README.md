@@ -11,6 +11,8 @@ A GraphQL server engine for Dart. It follows the GraphQL spec (October
   null bubbling, and errors with `locations` and `path`.
 - Introspection, so tools like GraphiQL work. You can turn it off.
 - A `DataLoader` to batch and cache database loads.
+- A Dox provider that serves GraphQL over HTTP, with GraphiQL in
+  development.
 
 The engine is pure Dart. It uses [gql](https://pub.dev/packages/gql) only
 to parse queries.
@@ -47,7 +49,7 @@ final ObjectType<Book, AppContext> bookType = ObjectType<Book, AppContext>(
   ],
 );
 
-final Schema<AppContext> schema = Schema<AppContext>(
+final GraphQLSchema<AppContext> schema = GraphQLSchema<AppContext>(
   query: ObjectType<Object?, AppContext>(
     'Query',
     fields: () => <Field<Object?, AppContext>>[
@@ -100,3 +102,76 @@ Future<void> main() async {
   to see the real message. Throw a `GraphQLError` to send your own.
 - Make one `DataLoader` per request, in the context, so the cache lives
   only as long as the request.
+
+## Use it in a Dox app
+
+`GraphQLProvider` adds the endpoint. It builds the executor once when the
+app starts and adds `GET` and `POST` routes at `/graphql`.
+
+Put the config in `lib/config/graphql.dart`:
+
+```dart
+import 'package:dox_graphql/dox_graphql.dart';
+
+GraphQLConfig graphqlConfig = GraphQLConfig(
+  schema: schema, // a GraphQLSchema<DoxGraphQLContext>
+  middleware: <Object>[AuthMiddleware(optional: true)],
+);
+```
+
+Add a provider (Dox finds it, like every `DoxProvider`):
+
+```dart
+class AppGraphQLProvider extends GraphQLProvider {
+  AppGraphQLProvider() : super(graphqlConfig);
+}
+```
+
+Resolvers get a `DoxGraphQLContext`:
+
+```dart
+Field<Object?, DoxGraphQLContext>(
+  'me',
+  userType,
+  resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) {
+    User? me = info.context.user<User>(); // null for a guest
+    return me;
+  },
+)
+```
+
+- `info.context.request`: the `DoxRequest`.
+- `info.context.user<T>()` and `info.context.auth`: the logged-in user,
+  set by an auth middleware on the route.
+- `info.context.make<T>()`: a service from the Dox container.
+- `info.context.loader<K, V>(name, create)`: a `DataLoader` for this
+  request only. The first call makes it; later calls get the same one.
+
+### Defaults
+
+| Setting | Default |
+| --- | --- |
+| `path` | `/graphql` |
+| `introspection` | on when `APP_ENV` is `development`, else off |
+| `showInternalErrors` | on when `APP_ENV` is `development`, else off |
+| `graphiql` | on when `APP_ENV` is `development`, else off |
+| `maxDepth`, `maxQueryLength`, `maxFields`, `maxNodes`, `maxErrors` | the engine defaults |
+
+### HTTP
+
+- `POST` with a JSON body: `query`, `variables`, `operationName`,
+  `extensions`.
+- `GET` with the same names in the URL (`variables` and `extensions` as
+  JSON text). Queries only: a mutation gets `405` with `Allow: POST`.
+- The answer is `application/graphql-response+json` when the `Accept`
+  header has it, else `application/json`. With the new type, a request
+  that fails before it runs (syntax, validation, variables) gets `400`.
+  With `application/json` it gets `200`.
+- Bad JSON or a missing query gets `400` with a GraphQL error. A body
+  that is not JSON gets `415`.
+- An error a resolver throws is sent to the `ExceptionHandler` of the
+  app (it logs with the Dox logger by default). The client sees
+  "Internal server error", unless `showInternalErrors` is on.
+- A browser that opens `/graphql` gets the GraphiQL page when `graphiql`
+  is on. It loads GraphiQL 4.1.2 and React 18.3.1 from jsDelivr, with
+  SRI hashes.

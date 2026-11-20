@@ -29,7 +29,7 @@ final ObjectType<int, Object?> nodeType = ObjectType<int, Object?>(
   ],
 );
 
-final Schema<Object?> schema = Schema<Object?>(
+final GraphQLSchema<Object?> schema = GraphQLSchema<Object?>(
   query: ObjectType<Object?, Object?>(
     'Query',
     fields: () => <Field<Object?, Object?>>[
@@ -412,7 +412,7 @@ void main() {
   });
 
   group('error messages', () {
-    Schema<Object?> failing = Schema<Object?>(
+    GraphQLSchema<Object?> failing = GraphQLSchema<Object?>(
       query: ObjectType<Object?, Object?>(
         'Query',
         fields: () => <Field<Object?, Object?>>[

@@ -128,7 +128,7 @@ final ObjectType<Object?, Object?> complicatedArgs =
       ],
     );
 
-final Schema<Object?> schema = Schema<Object?>(
+final GraphQLSchema<Object?> schema = GraphQLSchema<Object?>(
   query: ObjectType<Object?, Object?>(
     'Query',
     fields: () => <Field<Object?, Object?>>[

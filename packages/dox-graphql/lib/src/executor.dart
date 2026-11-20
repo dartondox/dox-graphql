@@ -14,7 +14,7 @@ import 'types.dart';
 import 'validation.dart';
 import 'values.dart';
 
-/// Parses, validates and runs GraphQL requests on a [Schema].
+/// Parses, validates and runs GraphQL requests on a [GraphQLSchema].
 ///
 /// ```dart
 /// GraphQLExecutor<AppContext> executor = GraphQLExecutor<AppContext>(schema);
@@ -47,18 +47,33 @@ final class GraphQLExecutor<C> {
     this.schema, {
     this.introspection = true,
     List<ValidationRule> rules = const <ValidationRule>[],
-    this.maxDepth = 64,
-    this.maxQueryLength = 1000000,
-    this.maxFields = 20000,
-    this.maxNodes = 100000,
-    this.maxErrors = 100,
+    this.maxDepth = defaultMaxDepth,
+    this.maxQueryLength = defaultMaxQueryLength,
+    this.maxFields = defaultMaxFields,
+    this.maxNodes = defaultMaxNodes,
+    this.maxErrors = defaultMaxErrors,
     this.showInternalErrors = false,
   }) : rules = <ValidationRule>[
          if (!introspection) const NoIntrospectionRule(),
          ...rules,
        ];
 
-  final Schema<C> schema;
+  /// The default of [maxDepth]: 64.
+  static const int defaultMaxDepth = 64;
+
+  /// The default of [maxQueryLength]: 1,000,000 characters.
+  static const int defaultMaxQueryLength = 1000000;
+
+  /// The default of [maxFields]: 20,000.
+  static const int defaultMaxFields = 20000;
+
+  /// The default of [maxNodes]: 100,000.
+  static const int defaultMaxNodes = 100000;
+
+  /// The default of [maxErrors]: 100.
+  static const int defaultMaxErrors = 100;
+
+  final GraphQLSchema<C> schema;
   final bool introspection;
   final List<ValidationRule> rules;
   final int maxDepth;
@@ -73,9 +88,14 @@ final class GraphQLExecutor<C> {
   final bool showInternalErrors;
 
   /// Runs one request. It never throws: errors are in the response.
+  ///
+  /// With [allowMutations] false, a mutation does not run. The response
+  /// then has one [MutationNotAllowedError]. A server uses it for requests
+  /// that must not change data, like an HTTP `GET`.
   Future<GraphQLResponse> execute(
     GraphQLRequest request, {
     required C context,
+    bool allowMutations = true,
   }) async {
     String query = request.query;
     if (query.length > maxQueryLength) {
@@ -112,7 +132,7 @@ final class GraphQLExecutor<C> {
     if (errors.isNotEmpty) return GraphQLResponse.failed(errors);
 
     try {
-      return await _run(document, request, context);
+      return await _run(document, request, context, allowMutations);
     } on StackOverflowError {
       return _tooDeep();
     } catch (e, st) {
@@ -139,12 +159,16 @@ final class GraphQLExecutor<C> {
     DocumentNode document,
     GraphQLRequest request,
     C context,
+    bool allowMutations,
   ) async {
     OperationDefinitionNode operation;
     try {
       operation = _operation(document, request.operationName);
     } on GraphQLError catch (e) {
       return GraphQLResponse.failed(<GraphQLError>[e]);
+    }
+    if (!allowMutations && operation.type == OperationType.mutation) {
+      return GraphQLResponse.failed(<GraphQLError>[MutationNotAllowedError()]);
     }
 
     (Map<String, Object?>, List<GraphQLError>) coerced = Values.variableValues(
@@ -257,7 +281,7 @@ final class _Execution {
     this.maxErrors,
   ) : variableValues = InputValues(variables);
 
-  final Schema<Object?> schema;
+  final GraphQLSchema<Object?> schema;
   final OperationDefinitionNode operation;
   final Map<String, FragmentDefinitionNode> fragments;
   final Map<String, Object?> variables;

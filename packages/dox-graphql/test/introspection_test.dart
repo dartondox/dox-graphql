@@ -193,7 +193,7 @@ void main() {
   });
 
   test('deprecated fields and values are hidden by default', () async {
-    Schema<Object?> s = Schema<Object?>(
+    GraphQLSchema<Object?> s = GraphQLSchema<Object?>(
       query: ObjectType<Object?, Object?>(
         'Query',
         fields: () => <Field<Object?, Object?>>[

@@ -278,7 +278,10 @@ final ObjectType<Object?, Ctx> mutation = ObjectType<Object?, Ctx>(
   ],
 );
 
-final Schema<Ctx> schema = Schema<Ctx>(query: query, mutation: mutation);
+final GraphQLSchema<Ctx> schema = GraphQLSchema<Ctx>(
+  query: query,
+  mutation: mutation,
+);
 final GraphQLExecutor<Ctx> executor = GraphQLExecutor<Ctx>(schema);
 
 Future<Map<String, Object?>> run(
@@ -494,6 +497,26 @@ void main() {
       ]);
     });
 
+    test('allowMutations: false stops a mutation before it runs', () async {
+      Ctx ctx = Ctx();
+      GraphQLResponse r = await executor.execute(
+        const GraphQLRequest('mutation { first }'),
+        context: ctx,
+        allowMutations: false,
+      );
+      expect(r.hasData, isFalse);
+      expect(r.errors.single, isA<MutationNotAllowedError>());
+      expect(ctx.log, isEmpty);
+      GraphQLResponse q = await executor.execute(
+        const GraphQLRequest('{ __typename }'),
+        context: ctx,
+        allowMutations: false,
+      );
+      expect(q.toJson(), <String, Object?>{
+        'data': <String, Object?>{'__typename': 'Query'},
+      });
+    });
+
     test('the typed context reaches resolvers', () async {
       expect(await run('{ user }', ctx: Ctx()..user = 'bob'), <String, Object?>{
         'data': <String, Object?>{'user': 'bob'},
@@ -620,7 +643,7 @@ void main() {
         mapDog,
         mapCat,
       ]);
-      Schema<Ctx> s = Schema<Ctx>(
+      GraphQLSchema<Ctx> s = GraphQLSchema<Ctx>(
         query: ObjectType<Object?, Ctx>(
           'Query',
           fields: () => <Field<Object?, Ctx>>[
@@ -746,11 +769,30 @@ void main() {
         'query': '{ user }',
         'operationName': null,
         'variables': <String, Object?>{'a': 1},
+        'extensions': <String, Object?>{'b': 2},
       });
       expect(r.query, '{ user }');
       expect(r.variables, <String, Object?>{'a': 1});
+      expect(r.extensions, <String, Object?>{'b': 2});
       expect(
         () => GraphQLRequest.fromJson(<String, Object?>{'query': 1}),
+        throwsA(isA<GraphQLError>()),
+      );
+      expect(
+        () => GraphQLRequest.fromJson(<String, Object?>{}),
+        throwsA(
+          isA<GraphQLError>().having(
+            (GraphQLError e) => e.message,
+            'message',
+            'The request has no "query".',
+          ),
+        ),
+      );
+      expect(
+        () => GraphQLRequest.fromJson(<String, Object?>{
+          'query': '{ user }',
+          'extensions': 1,
+        }),
         throwsA(isA<GraphQLError>()),
       );
     });

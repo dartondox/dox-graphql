@@ -234,9 +234,8 @@ queryType = ObjectType<Object?, StarWarsContext>(
   ],
 );
 
-final Schema<StarWarsContext> starWarsSchema = Schema<StarWarsContext>(
-  query: queryType,
-);
+final GraphQLSchema<StarWarsContext> starWarsSchema =
+    GraphQLSchema<StarWarsContext>(query: queryType);
 
 final GraphQLExecutor<StarWarsContext> starWars =
     GraphQLExecutor<StarWarsContext>(starWarsSchema);

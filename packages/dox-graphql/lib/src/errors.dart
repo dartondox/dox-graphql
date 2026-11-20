@@ -180,7 +180,14 @@ class GraphQLError implements Exception {
       set.selections.isEmpty ? null : _firstName(set.selections.first);
 }
 
-/// Thrown when a [Schema] is not valid. [problems] lists every problem.
+/// The error of a mutation that was sent where only queries may run, see
+/// `GraphQLExecutor.execute`.
+class MutationNotAllowedError extends GraphQLError {
+  MutationNotAllowedError()
+    : super('Mutations are not allowed in this request.');
+}
+
+/// Thrown when a [GraphQLSchema] is not valid. [problems] lists every problem.
 class SchemaError implements Exception {
   SchemaError(this.problems);
 

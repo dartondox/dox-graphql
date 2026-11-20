@@ -10,8 +10,8 @@ import 'types.dart';
 final class Introspection {
   const Introspection._();
 
-  static final ObjectType<Schema<Object?>, Object?> schemaType =
-      ObjectType<Schema<Object?>, Object?>(
+  static final ObjectType<GraphQLSchema<Object?>, Object?> schemaType =
+      ObjectType<GraphQLSchema<Object?>, Object?>(
         '__Schema',
         description:
             'A GraphQL Schema defines the capabilities of a GraphQL server. '
@@ -21,47 +21,50 @@ final class Introspection {
         fields: _schemaFields,
       );
 
-  static List<Field<Schema<Object?>, Object?>> _schemaFields() {
-    return <Field<Schema<Object?>, Object?>>[
-      Field<Schema<Object?>, Object?>(
+  static List<Field<GraphQLSchema<Object?>, Object?>> _schemaFields() {
+    return <Field<GraphQLSchema<Object?>, Object?>>[
+      Field<GraphQLSchema<Object?>, Object?>(
         'description',
         graphqlString,
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) => s.description,
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) =>
+            s.description,
       ),
-      Field<Schema<Object?>, Object?>(
+      Field<GraphQLSchema<Object?>, Object?>(
         'types',
         typeType.nonNull.list.nonNull,
         description: 'A list of all types supported by this server.',
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) =>
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) =>
             s.typeMap.values.toList(),
       ),
-      Field<Schema<Object?>, Object?>(
+      Field<GraphQLSchema<Object?>, Object?>(
         'queryType',
         typeType.nonNull,
         description: 'The type that query operations will be rooted at.',
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) => s.query,
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) => s.query,
       ),
-      Field<Schema<Object?>, Object?>(
+      Field<GraphQLSchema<Object?>, Object?>(
         'mutationType',
         typeType,
         description:
             'If this server supports mutation, the type that mutation '
             'operations will be rooted at.',
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) => s.mutation,
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) =>
+            s.mutation,
       ),
-      Field<Schema<Object?>, Object?>(
+      Field<GraphQLSchema<Object?>, Object?>(
         'subscriptionType',
         typeType,
         description:
             'If this server support subscription, the type that '
             'subscription operations will be rooted at.',
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) => null,
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) => null,
       ),
-      Field<Schema<Object?>, Object?>(
+      Field<GraphQLSchema<Object?>, Object?>(
         'directives',
         directiveType.nonNull.list.nonNull,
         description: 'A list of all directives supported by this server.',
-        resolve: (Schema<Object?> s, ResolveInfo<Object?> i) => s.directives,
+        resolve: (GraphQLSchema<Object?> s, ResolveInfo<Object?> i) =>
+            s.directives,
       ),
     ];
   }

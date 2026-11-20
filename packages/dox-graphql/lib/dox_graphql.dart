@@ -1,5 +1,6 @@
 /// A GraphQL server engine: schema, validation, execution, introspection
-/// and a DataLoader.
+/// and a DataLoader. With `GraphQLProvider`, it serves GraphQL in a Dox
+/// app.
 library;
 
 // The query AST of package:gql: custom scalars read literals, and
@@ -7,6 +8,9 @@ library;
 export 'package:gql/ast.dart';
 
 export 'src/data_loader.dart';
+export 'src/dox/graphql_config.dart';
+export 'src/dox/graphql_context.dart';
+export 'src/dox/graphql_provider.dart';
 export 'src/errors.dart';
 export 'src/executor.dart';
 export 'src/request.dart';

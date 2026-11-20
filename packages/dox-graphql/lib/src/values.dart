@@ -34,7 +34,10 @@ final class Values {
 
   /// The type that a type node in the query names, or null when a named
   /// type is not in the schema.
-  static GraphQLType? typeFromAst(Schema<Object?> schema, TypeNode node) {
+  static GraphQLType? typeFromAst(
+    GraphQLSchema<Object?> schema,
+    TypeNode node,
+  ) {
     GraphQLType? inner = switch (node) {
       NamedTypeNode() => schema.type(node.name.value),
       ListTypeNode() => switch (typeFromAst(schema, node.type)) {
@@ -215,7 +218,7 @@ final class Values {
   /// Coerces the variables of an operation. Returns the values, or the
   /// errors when a variable does not fit.
   static (Map<String, Object?>, List<GraphQLError>) variableValues(
-    Schema<Object?> schema,
+    GraphQLSchema<Object?> schema,
     OperationDefinitionNode operation,
     Map<String, Object?> inputs,
   ) {
