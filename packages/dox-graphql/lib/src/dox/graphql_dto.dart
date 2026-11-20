@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:dox_core/dox_core.dart';
 
 import '../errors.dart';
@@ -37,12 +39,13 @@ class GraphQLDto {
   ///
   /// [input] has the stored values for the other keys, so the DTO gets a
   /// whole input. Their errors are left out, like a `@Unique` that finds
-  /// the row itself, or an old value that breaks a newer rule. Read only
-  /// the [sent] fields of the DTO.
+  /// the row itself, or an old value that breaks a newer rule. The sent
+  /// keys get all their rules and changes (like `@Trim`). Read only the
+  /// [sent] fields of the DTO.
   ///
-  /// When a stored value has a wrong type, the DTO can not be converted.
-  /// It is then made without checks, with the value of [placeholders]
-  /// for that key.
+  /// [placeholders] has a value of the right type for each key. It takes
+  /// the place of a stored value that fails, so the DTO can be made. It
+  /// is never read.
   static Future<T> validateSent<T>(
     DtoSchema<T> schema,
     Map<String, Object?> input,
@@ -52,31 +55,28 @@ class GraphQLDto {
     Map<String, String> names = const <String, String>{},
     Map<String, String> params = const <String, String>{},
   }) async {
-    DtoState state = _state(input, context, params)
-      ..keepValues = schema.usesRequiredWhen;
-    // the four steps of DtoSchema.run, so the steps after a failed
-    // stored value still check the sent values
-    T? value = schema.convert(input, state, const <Object>[]);
-    _throwSent(state.issues, sent, names);
-    if (value == null) {
-      Map<String, Object?> data = <String, Object?>{...input};
-      for (ValidationIssue issue in state.issues) {
-        Object key = issue.path.first;
-        if (placeholders.containsKey(key)) data['$key'] = placeholders[key];
+    // first: which stored values fail
+    DtoState first = _state(input, context, params);
+    schema.convert(input, first, const <Object>[]);
+    Map<String, Object?> data = <String, Object?>{...input};
+    for (ValidationIssue issue in first.issues) {
+      String key = issue.path.isEmpty ? '' : '${issue.path.first}';
+      if (!sent.contains(key) && placeholders.containsKey(key)) {
+        data[key] = placeholders[key];
       }
-      // ponytail: the sent values are used as sent here, without the
-      // changes of the DTO (like @Trim). Only a stored value with a wrong
-      // type gets here.
-      value = schema.fromMap(data);
     }
-    T dto = value as T;
-    state.issues.clear();
-    if (schema.hasChecks) {
-      await schema.crossCheck(dto, state, const <Object>[]);
-    }
-    if (schema.isAsync) await schema.checkAsync(dto, state, const <Object>[]);
-    _throwSent(state.issues, sent, names);
-    return dto;
+    // then the real check. The errors of the other keys are dropped as
+    // they are added, so the DTO is made and every step runs.
+    DtoState state = DtoState(
+      root: data,
+      resolver: Dox().messages,
+      params: params,
+      locale: context.request.locale,
+      issues: _SentIssues(sent),
+    );
+    ParseResult<T> result = await schema.run(data, state);
+    if (result.success) return result.value as T;
+    throw failed(result.issues, names);
   }
 
   static DtoState _state(
@@ -90,19 +90,6 @@ class GraphQLDto {
       params: params,
       locale: context.request.locale,
     );
-  }
-
-  /// Throws the errors of the [sent] keys, if there are any.
-  static void _throwSent(
-    List<ValidationIssue> issues,
-    Set<String> sent,
-    Map<String, String> names,
-  ) {
-    List<ValidationIssue> own = <ValidationIssue>[
-      for (ValidationIssue issue in issues)
-        if (issue.path.isNotEmpty && sent.contains(issue.path.first)) issue,
-    ];
-    if (own.isNotEmpty) throw failed(own, names);
   }
 
   /// The "Validation failed" error for [issues]. The first key of each
@@ -127,4 +114,43 @@ class GraphQLDto {
       extensions: <String, Object?>{'code': validationFailed, 'fields': fields},
     );
   }
+}
+
+/// A list of issues that drops the issues of keys that were not sent. An
+/// issue about the whole input (`_root`) is kept.
+class _SentIssues extends ListBase<ValidationIssue> {
+  _SentIssues(this.sent);
+
+  final Set<String> sent;
+  final List<ValidationIssue> _issues = <ValidationIssue>[];
+
+  bool _keeps(ValidationIssue issue) {
+    if (issue.path.isEmpty) return true;
+    String key = '${issue.path.first}';
+    return key == '_root' || sent.contains(key);
+  }
+
+  @override
+  void add(ValidationIssue element) {
+    if (_keeps(element)) _issues.add(element);
+  }
+
+  @override
+  void addAll(Iterable<ValidationIssue> iterable) {
+    for (ValidationIssue issue in iterable) {
+      add(issue);
+    }
+  }
+
+  @override
+  int get length => _issues.length;
+
+  @override
+  set length(int value) => _issues.length = value;
+
+  @override
+  ValidationIssue operator [](int index) => _issues[index];
+
+  @override
+  void operator []=(int index, ValidationIssue value) => _issues[index] = value;
 }

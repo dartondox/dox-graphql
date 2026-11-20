@@ -1072,7 +1072,7 @@ Future<i3.Article?> _updateArticle(ResolveInfo<DoxGraphQLContext> info) async {
     <String, Object?>{'title': model.title, ...given},
     info.context,
     sent: given.keys.toSet(),
-    placeholders: const <String, Object?>{'title': ''},
+    placeholders: const <String, Object?>{'title': '-'},
     names: const <String, String>{},
     params: <String, String>{'id': '${model.id}'},
   );
@@ -1110,7 +1110,7 @@ Future<i6.Member?> _updateMember(ResolveInfo<DoxGraphQLContext> info) async {
     <String, Object?>{'name': model.name, 'email': model.email, ...given},
     info.context,
     sent: given.keys.toSet(),
-    placeholders: const <String, Object?>{'name': '', 'email': ''},
+    placeholders: const <String, Object?>{'name': '-', 'email': '-'},
     names: const <String, String>{},
     params: <String, String>{'id': '${model.id}'},
   );
@@ -1156,8 +1156,8 @@ Future<i7.Post?> _updatePost(ResolveInfo<DoxGraphQLContext> info) async {
     info.context,
     sent: given.keys.toSet(),
     placeholders: const <String, Object?>{
-      'title': '',
-      'body': '',
+      'title': '-',
+      'body': '-',
       'status': 'draft',
     },
     names: const <String, String>{},

@@ -420,7 +420,8 @@ class SchemaReader {
       // a value of the right type, for a stored value that has a wrong
       // one (see GraphQLDto.validateSent). It is never saved.
       String placeholder = switch (field.type.kind) {
-        DtoKind.string => "''",
+        // not empty: a DTO reads "" as missing
+        DtoKind.string => "'-'",
         DtoKind.integer || DtoKind.number => '0',
         DtoKind.decimal => '0.0',
         DtoKind.boolean => 'false',

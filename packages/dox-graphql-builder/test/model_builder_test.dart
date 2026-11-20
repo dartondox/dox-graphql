@@ -289,7 +289,7 @@ class Post extends Model<Post> {
             "model.userId, 'status': model.status?.name, 'at': "
             'model.at?.toIso8601String(), ...given}, info.context, '
             'sent: given.keys.toSet(), placeholders: const <String, Object?>{'
-            "'title': '', 'user_id': 0, 'status': 'draft', "
+            "'title': '-', 'user_id': 0, 'status': 'draft', "
             "'at': '1970-01-01T00:00:00.000Z'},",
           ),
         ),

@@ -13,5 +13,7 @@ class MemberDto {
   @Unique('members', column: 'name', message: 'The name is taken')
   final String name;
 
+  @Trim()
+  @MinLength(5, message: 'The email is too short')
   final String? email;
 }

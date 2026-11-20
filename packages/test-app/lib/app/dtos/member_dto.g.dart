@@ -41,7 +41,7 @@ class _$MemberDtoDto extends DtoSchema<MemberDto> {
     if (c0 == null || c0 is Undefined) s.required(p, 'name', _m);
     // email: String?
     Object? c1;
-    c1 = s.string(s.read(input, 'email'), p, 'email', _m);
+    c1 = s.string(s.read(input, 'email'), p, 'email', _m, trim: true);
     if (s.issues.length != e && !s.allErrors) return null;
     if (c0 is String) {
       if (!(c0.runes.length >= 3)) {
@@ -53,6 +53,20 @@ class _$MemberDtoDto extends DtoSchema<MemberDto> {
           c0,
           params: const <String, Object?>{'min': 3},
           message: 'The name is too short',
+          messages: _m,
+        );
+      }
+    }
+    if (c1 is String) {
+      if (!(c1.runes.length >= 5)) {
+        s.fail(
+          p,
+          'email',
+          IssueCodes.minLength,
+          DefaultMessages.minLength,
+          c1,
+          params: const <String, Object?>{'min': 5},
+          message: 'The email is too short',
           messages: _m,
         );
       }
@@ -102,6 +116,7 @@ class _$MemberDtoDto extends DtoSchema<MemberDto> {
         'name': <String, dynamic>{'type': 'string', 'minLength': 3},
         'email': <String, dynamic>{
           'type': <dynamic>['string', 'null'],
+          'minLength': 5,
         },
       },
       'required': <dynamic>['name'],

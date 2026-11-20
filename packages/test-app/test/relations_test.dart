@@ -135,12 +135,12 @@ void main() {
     test('a @Unique field that is not sent is not checked', () async {
       Map<String, Object?> res = await run(
         client,
-        'mutation { updateMember(id: "1", input: {email: "z@x"}) '
+        'mutation { updateMember(id: "1", input: {email: "z@x.io"}) '
         '{ name email } }',
       );
       expect(res, <String, Object?>{
         'data': <String, Object?>{
-          'updateMember': <String, Object?>{'name': 'ann', 'email': 'z@x'},
+          'updateMember': <String, Object?>{'name': 'ann', 'email': 'z@x.io'},
         },
       });
     });
@@ -156,16 +156,63 @@ void main() {
     test('an old row that breaks a rule can change other fields', () async {
       Map<String, Object?> res = await run(
         client,
-        'mutation { a: updateMember(id: "3", input: {email: "y@x"}) '
-        '{ name email } b: updateMember(id: "4", input: {email: "w@x"}) '
+        'mutation { a: updateMember(id: "3", input: {email: "y@x.io"}) '
+        '{ name email } b: updateMember(id: "4", input: {email: "w@x.io"}) '
         '{ name email } }',
       );
       expect(res, <String, Object?>{
         'data': <String, Object?>{
-          'a': <String, Object?>{'name': 'ab', 'email': 'y@x'},
-          'b': <String, Object?>{'name': null, 'email': 'w@x'},
+          'a': <String, Object?>{'name': 'ab', 'email': 'y@x.io'},
+          'b': <String, Object?>{'name': null, 'email': 'w@x.io'},
         },
       });
+    });
+
+    test('a sent field gets its rules when a stored value is null', () async {
+      // member 4 has no name, and name is required
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { updateMember(id: "4", input: {email: "x"}) { email } }',
+      );
+      expect(_fields(res), <String, Object?>{
+        'email': 'The email is too short',
+      });
+    });
+
+    test('a sent field gets its changes, like @Trim', () async {
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { updateMember(id: "4", input: {email: "  abcdefgh  "}) '
+        '{ email } }',
+      );
+      expect(res['data'], <String, Object?>{
+        'updateMember': <String, Object?>{'email': 'abcdefgh'},
+      });
+      res = await run(client, '{ member(id: "4") { email } }');
+      expect(res['data'], <String, Object?>{
+        'member': <String, Object?>{'email': 'abcdefgh'},
+      });
+    });
+
+    test('a sent value of the wrong type is an error, not a crash', () async {
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { updateMember(id: "4", input: {email: 5}) { email } }',
+      );
+      expect(res['data'], isNull);
+      List<Object?> errors = res['errors'] as List<Object?>;
+      expect(
+        (errors.single as Map<String, Object?>)['message'],
+        isNot('Internal server error'),
+      );
+      res = await run(
+        client,
+        r'mutation U($e: String) { updateMember(id: "4", input: {email: $e}) '
+        '{ email } }',
+        variables: <String, Object?>{'e': true},
+      );
+      expect(res['data'], isNull);
+      expect(res['errors'], isNotEmpty);
     });
 
     test('the old row still gets errors for a sent field', () async {
