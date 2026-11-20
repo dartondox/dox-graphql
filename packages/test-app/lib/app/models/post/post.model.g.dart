@@ -49,12 +49,16 @@ class PostGenerator extends Model<Post> {
   Map<String, Function> get relationsResultMatcher => const <String, Function>{
     'user': getUser,
     'comments': getComments,
+    'tags': getTags,
+    'images': getImages,
   };
 
   @override
   Map<String, Function> get relationsQueryMatcher => const <String, Function>{
     'user': queryUser,
     'comments': queryComments,
+    'tags': queryTags,
+    'images': queryImages,
   };
 
   static Future<void> getUser(List<Model<Post>> list) async {
@@ -77,6 +81,28 @@ class PostGenerator extends Model<Post> {
 
   static Comment? queryComments(List<Model<Post>> list) {
     return hasMany<Post, Comment>(list, () => Comment());
+  }
+
+  static Future<void> getTags(List<Model<Post>> list) async {
+    var result = await getManyToMany<Post, Tag>(queryTags(list), list);
+    for (dynamic i in list) {
+      i.tags = result[i.tempIdValue.toString()] ?? <Tag>[];
+    }
+  }
+
+  static Tag? queryTags(List<Model<Post>> list) {
+    return manyToMany<Post, Tag>(list, () => Tag(), pivotTable: 'post_tag');
+  }
+
+  static Future<void> getImages(List<Model<Post>> list) async {
+    var result = await getMorphMany<Post, Image>(queryImages(list), list);
+    for (dynamic i in list) {
+      i.images = result[i.tempIdValue.toString()] ?? <Image>[];
+    }
+  }
+
+  static Image? queryImages(List<Model<Post>> list) {
+    return morphMany<Post, Image>(list, () => Image(), name: 'imageable');
   }
 
   static const _statusCast = EnumCast(PostStatus.values);
@@ -149,6 +175,12 @@ class PostGenerator extends Model<Post> {
     }
     if (preload.contains('comments')) {
       map['comments'] = toMap(instance.comments);
+    }
+    if (preload.contains('tags')) {
+      map['tags'] = toMap(instance.tags);
+    }
+    if (preload.contains('images')) {
+      map['images'] = toMap(instance.images);
     }
 
     return map;

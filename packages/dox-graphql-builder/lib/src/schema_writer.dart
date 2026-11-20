@@ -97,10 +97,17 @@ class SchemaWriter {
       out.writeln('description: ${_string(object.description!)},');
     }
     if (object.orm) {
-      // a column in `hidden` of the model is left out, so it never leaks
+      // a column or relation in `hidden` of the model is left out, so it
+      // never leaks. With `visibleFields`, only those are shown.
       out
         ..writeln('fields: () {')
-        ..writeln('List<String> hidden = $dartType().hidden;')
+        ..writeln('$dartType model = $dartType();')
+        ..writeln('List<String> hidden = model.hidden;')
+        ..writeln('List<String> visible = model.visibleFields;')
+        ..writeln(
+          'bool show(String name) => !hidden.contains(name) && '
+          '(visible.isEmpty || visible.contains(name));',
+        )
         ..writeln('return <Field<$dartType, $_context>>[');
     } else {
       out.writeln('fields: () => <Field<$dartType, $_context>>[');
@@ -142,9 +149,7 @@ class SchemaWriter {
     out.write('resolve: ($parent $source, $_info)$async => ${field.resolve},)');
     String text = out.toString();
     String? column = field.column;
-    return column == null
-        ? text
-        : 'if (!hidden.contains(${_string(column)})) $text';
+    return column == null ? text : 'if (show(${_string(column)})) $text';
   }
 
   void _writeEnum(StringBuffer out, EnumSpec spec) {

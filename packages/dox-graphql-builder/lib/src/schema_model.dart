@@ -50,8 +50,9 @@ class FieldSpec {
   /// A field made for a model (an `AutoField`).
   final bool auto;
 
-  /// Models only: the column of the field. The field is left out when
-  /// the model has the column in `hidden`.
+  /// Models only: the column of the field (the snake_case name for a
+  /// relation). The field is left out when the model has it in `hidden`,
+  /// or has `visibleFields` without it.
   final String? column;
 }
 

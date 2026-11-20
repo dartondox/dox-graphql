@@ -252,7 +252,9 @@ class SchemaReader {
   }
 
   /// The key, the `@Column` fields and the relations of a model. A field
-  /// is left out at run time when its column is in `hidden`.
+  /// is left out at run time when its column (or for a relation, its
+  /// name in snake_case) is in `hidden`, or `visibleFields` is not empty
+  /// and does not have it.
   void _readModelFields(ObjectSpec spec) {
     ClassElement element = spec.element;
     String key = camelCase(spec.primaryKey);
@@ -299,6 +301,8 @@ class SchemaReader {
         resolve:
             'GraphQLOrm.relation<$model, ${imports.code(field.type)}>(s, '
             "'$dartName', info.context, ($model p) => p.$dartName)",
+        // the name toJson() gives a relation, so `hidden` can name it
+        column: snakeCase(dartName),
       );
     }
   }
@@ -360,6 +364,7 @@ class SchemaReader {
     List<String> updates = <String>[];
     List<String> current = <String>[];
     List<String> names = <String>[];
+    List<String> placeholders = <String>[];
     for (DtoField field in _dtos.read(dtoElement).fields) {
       String where = '${dtoElement.displayName}.${field.name}';
       if (field.maybe) {
@@ -412,6 +417,18 @@ class SchemaReader {
         'model.${field.name} = dto.${field.name};',
       );
       current.add("'${field.key}': $value,");
+      // a value of the right type, for a stored value that has a wrong
+      // one (see GraphQLDto.validateSent). It is never saved.
+      String placeholder = switch (field.type.kind) {
+        DtoKind.string => "''",
+        DtoKind.integer || DtoKind.number => '0',
+        DtoKind.decimal => '0.0',
+        DtoKind.boolean => 'false',
+        DtoKind.date => "'1970-01-01T00:00:00.000Z'",
+        // enum: the name of its first value
+        _ => "'${_enumOf(field.type).constants.first.displayName}'",
+      };
+      placeholders.add("'${field.key}': $placeholder,");
       if (field.key != field.name) {
         names.add("'${field.key}': '${field.name}',");
       }
@@ -435,14 +452,15 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
   if (model == null) return null;
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = ${update.toMap}(input);
-  // the other fields keep their values, so the DTO gets a whole input
-  $dto dto = await GraphQLDto.validate<$dto>(
+  // the other fields keep their stored values, and are not checked
+  $dto dto = await GraphQLDto.validateSent<$dto>(
     $schema,
     <String, Object?>{${current.join()} ...given},
     info.context,
+    sent: given.keys.toSet(),
+    placeholders: const <String, Object?>{${placeholders.join()}},
     names: const <String, String>{${names.join()}},
     params: <String, String>{'id': '\${model.$key}'},
-    only: given.keys.toSet(),
   );
   ${updates.join('\n  ')}
   await model.save();
@@ -489,6 +507,10 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       'Mutation',
       element,
     );
+  }
+
+  static EnumElement _enumOf(DtoType type) {
+    return (type.type as InterfaceType).element as EnumElement;
   }
 
   static FieldElement? _columnNamed(ClassElement model, String name) {

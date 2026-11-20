@@ -1,7 +1,9 @@
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
+import '../article/article.model.dart';
 import '../post/post.model.dart';
+import '../profile/profile.model.dart';
 
 part 'user.model.g.dart';
 
@@ -19,4 +21,10 @@ class User extends UserGenerator {
 
   @HasMany(Post)
   List<Post> posts = <Post>[];
+
+  @HasOne(Profile)
+  Profile? profile;
+
+  @HasMany(Article)
+  List<Article> articles = <Article>[];
 }

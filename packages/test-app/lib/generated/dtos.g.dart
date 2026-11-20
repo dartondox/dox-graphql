@@ -3,11 +3,15 @@
 // ignore_for_file: type=lint
 
 import 'package:dox_core/dox_core.dart';
+import 'package:dox_graphql_test_app/app/dtos/article_dto.dart';
 import 'package:dox_graphql_test_app/app/dtos/create_book.dart';
 import 'package:dox_graphql_test_app/app/dtos/create_post.dart';
+import 'package:dox_graphql_test_app/app/dtos/member_dto.dart';
 
 /// Every DTO of the app. Use it in `AppConfig(dtos: dtos)`.
 const List<DtoSchema<Object>> dtos = <DtoSchema<Object>>[
+  $ArticleDtoDto,
   $CreateBookDto,
   $CreatePostDtoDto,
+  $MemberDtoDto,
 ];

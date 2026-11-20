@@ -45,11 +45,15 @@ class UserGenerator extends Model<User> {
   @override
   Map<String, Function> get relationsResultMatcher => const <String, Function>{
     'posts': getPosts,
+    'profile': getProfile,
+    'articles': getArticles,
   };
 
   @override
   Map<String, Function> get relationsQueryMatcher => const <String, Function>{
     'posts': queryPosts,
+    'profile': queryProfile,
+    'articles': queryArticles,
   };
 
   static Future<void> getPosts(List<Model<User>> list) async {
@@ -61,6 +65,28 @@ class UserGenerator extends Model<User> {
 
   static Post? queryPosts(List<Model<User>> list) {
     return hasMany<User, Post>(list, () => Post());
+  }
+
+  static Future<void> getProfile(List<Model<User>> list) async {
+    var result = await getHasOne<User, Profile>(queryProfile(list), list);
+    for (dynamic i in list) {
+      i.profile = result[i.tempIdValue.toString()];
+    }
+  }
+
+  static Profile? queryProfile(List<Model<User>> list) {
+    return hasOne<User, Profile>(list, () => Profile());
+  }
+
+  static Future<void> getArticles(List<Model<User>> list) async {
+    var result = await getHasMany<User, Article>(queryArticles(list), list);
+    for (dynamic i in list) {
+      i.articles = result[i.tempIdValue.toString()] ?? <Article>[];
+    }
+  }
+
+  static Article? queryArticles(List<Model<User>> list) {
+    return hasMany<User, Article>(list, () => Article());
   }
 
   @override
@@ -116,6 +142,12 @@ class UserGenerator extends Model<User> {
     List<String> preload = getPreload();
     if (preload.contains('posts')) {
       map['posts'] = toMap(instance.posts);
+    }
+    if (preload.contains('profile')) {
+      map['profile'] = toMap(instance.profile);
+    }
+    if (preload.contains('articles')) {
+      map['articles'] = toMap(instance.articles);
     }
 
     return map;

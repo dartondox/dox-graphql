@@ -3,6 +3,8 @@ import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/create_post.dart';
 import '../comment/comment.model.dart';
+import '../image/image.model.dart';
+import '../tag/tag.model.dart';
 import '../user/user.model.dart';
 
 part 'post.model.g.dart';
@@ -36,6 +38,12 @@ class Post extends PostGenerator {
 
   @HasMany(Comment)
   List<Comment> comments = <Comment>[];
+
+  @ManyToMany(Tag, pivotTable: 'post_tag')
+  List<Tag> tags = <Tag>[];
+
+  @MorphMany(Image, 'imageable')
+  List<Image> images = <Image>[];
 
   /// The first 5 letters of the body.
   @GraphQLField()

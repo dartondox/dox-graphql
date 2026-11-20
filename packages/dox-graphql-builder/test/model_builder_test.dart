@@ -85,12 +85,16 @@ class Post extends Model<Post> {
         out,
         contains(
           flat(
-            'fields: () { List<String> hidden = i1.Post().hidden; '
+            'fields: () { i1.Post model = i1.Post(); '
+            'List<String> hidden = model.hidden; '
+            'List<String> visible = model.visibleFields; '
+            'bool show(String name) => !hidden.contains(name) && '
+            '(visible.isEmpty || visible.contains(name)); '
             'return <Field<i1.Post, DoxGraphQLContext>>['
-            "if (!hidden.contains('id')) Field<i1.Post, DoxGraphQLContext>("
+            "if (show('id')) Field<i1.Post, DoxGraphQLContext>("
             "'id', graphqlId.nonNull, resolve: (i1.Post s, "
             'ResolveInfo<DoxGraphQLContext> info) => s.id),'
-            "if (!hidden.contains('title')) Field<i1.Post, DoxGraphQLContext>("
+            "if (show('title')) Field<i1.Post, DoxGraphQLContext>("
             "'title', graphqlString,",
           ),
         ),
@@ -98,16 +102,15 @@ class Post extends Model<Post> {
       expect(
         out,
         contains(
-          flat(
-            "if (!hidden.contains('body')) Field<i1.Post, DoxGraphQLContext>('text',",
-          ),
+          flat("if (show('body')) Field<i1.Post, DoxGraphQLContext>('text',"),
         ),
       );
       expect(
         out,
         contains(
           flat(
-            "Field<i1.Post, DoxGraphQLContext>('user', _tUser, resolve: "
+            "if (show('user')) Field<i1.Post, DoxGraphQLContext>('user', "
+            '_tUser, resolve: '
             '(i1.Post s, ResolveInfo<DoxGraphQLContext> info) => '
             "GraphQLOrm.relation<i1.Post, i1.User?>(s, 'user', info.context, "
             '(i1.Post p) => p.user))',
@@ -118,7 +121,7 @@ class Post extends Model<Post> {
         out,
         contains(
           flat(
-            "Field<i1.Post, DoxGraphQLContext>('readers', "
+            "if (show('readers')) Field<i1.Post, DoxGraphQLContext>('readers', "
             '_tUser.nonNull.list.nonNull,',
           ),
         ),
@@ -277,10 +280,45 @@ class Post extends Model<Post> {
           ),
         ),
       );
-      expect(out, contains(flat('only: given.keys.toSet()')));
+      expect(
+        out,
+        contains(
+          flat(
+            'GraphQLDto.validateSent<i1.CreatePostDto>(i1.\$CreatePostDtoDto, '
+            "<String, Object?>{'title': model.title, 'user_id': "
+            "model.userId, 'status': model.status?.name, 'at': "
+            'model.at?.toIso8601String(), ...given}, info.context, '
+            'sent: given.keys.toSet(), placeholders: const <String, Object?>{'
+            "'title': '', 'user_id': 0, 'status': 'draft', "
+            "'at': '1970-01-01T00:00:00.000Z'},",
+          ),
+        ),
+      );
       expect(
         out,
         contains(flat("if (input.has('userId')) model.userId = dto.userId;")),
+      );
+    });
+  });
+
+  group('hidden and visibleFields |', () {
+    test('a relation is guarded by its snake_case name', () async {
+      String out = flat(
+        await _build('''
+$_user
+@DoxModel()
+@GraphQLType()
+class Member extends Model<Member> {
+  @HasOne(User)
+  User? mainUser;
+}
+'''),
+      );
+      expect(
+        out,
+        contains(
+          flat("if (show('main_user')) Field<i1.Member, DoxGraphQLContext>("),
+        ),
       );
     });
   });
