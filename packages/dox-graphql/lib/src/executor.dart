@@ -403,12 +403,17 @@ final class _Execution {
 
   /// Like [_check], for a loop that starts futures. The started ones are
   /// not awaited after a stop, so their errors are ignored.
-  void _checkStarted(List<Future<Object?>> started) {
+  void _checkStarted(List<Future<void>>? started) {
     if (_stopped == null) return;
-    for (Future<Object?> f in started) {
+    _ignore(started);
+    _check();
+  }
+
+  static void _ignore(List<Future<void>>? started) {
+    if (started == null) return;
+    for (Future<void> f in started) {
       f.ignore();
     }
-    _check();
   }
 
   /// Counts resolved fields and list items. Past [maxNodes], it stops the
@@ -495,25 +500,56 @@ final class _Execution {
   }
 
   /// Runs fields side by side.
-  Future<Map<String, Object?>> _fields(
+  ///
+  /// A field with a plain value is done at once, with no `Future`. Only a
+  /// field that waits (an async resolver, an async guard) gives a `Future`.
+  /// Thus, an object of plain values costs no `Future` at all.
+  FutureOr<Map<String, Object?>> _fields(
     ObjectType<Object?, Object?> type,
     Object? source,
     Map<String, List<FieldNode>> fields,
     ResponsePath? path,
-  ) async {
-    List<String> keys = fields.keys.toList();
-    List<Future<Object?>> futures = <Future<Object?>>[];
-    for (String key in keys) {
-      // Stop starting work at once when the request was stopped.
-      _checkStarted(futures);
-      futures.add(_field(type, source, fields[key]!, _path(path, key)));
-    }
-    List<Object?> values = await Future.wait(futures);
+  ) {
     Map<String, Object?> out = <String, Object?>{};
-    for (int i = 0; i < keys.length; i++) {
-      if (!identical(values[i], _skip)) out[keys[i]] = values[i];
+    List<Future<void>>? pending;
+    // A non-null field failed at once. Its siblings still run, so their
+    // errors are kept. Then this object fails.
+    _NullBubble? bubble;
+    for (MapEntry<String, List<FieldNode>> e in fields.entries) {
+      // Stop starting work at once when the request was stopped.
+      _checkStarted(pending);
+      String key = e.key;
+      Object? value;
+      try {
+        value = _field(type, source, e.value, _path(path, key));
+      } on _NullBubble catch (b) {
+        bubble = b;
+        continue;
+      } on _Stop {
+        _ignore(pending);
+        rethrow;
+      }
+      if (value is Future<Object?>) {
+        // Keeps the place of the key: the fields stay in query order.
+        out[key] = null;
+        (pending ??= <Future<void>>[]).add(
+          value.then((Object? v) {
+            out[key] = v;
+          }),
+        );
+      } else if (!identical(value, _skip)) {
+        out[key] = value;
+      }
     }
-    return out;
+    if (pending == null) {
+      if (bubble != null) throw bubble;
+      return out;
+    }
+    _NullBubble? failed = bubble;
+    return Future.wait(pending).then((_) {
+      if (failed != null) throw failed;
+      return out;
+    });
   }
 
   /// Runs mutation root fields one after another.
@@ -532,12 +568,12 @@ final class _Execution {
   static ResponsePath _path(ResponsePath? parent, String key) =>
       parent == null ? ResponsePath(null, PathKey(key)) : parent.key(key);
 
-  Future<Object?> _field(
+  FutureOr<Object?> _field(
     ObjectType<Object?, Object?> type,
     Object? source,
     List<FieldNode> nodes,
     ResponsePath path,
-  ) async {
+  ) {
     String name = nodes.first.name.value;
     Field<Object?, Object?>? def = schema.field(type, name);
     if (def == null) return _skip;
@@ -549,30 +585,19 @@ final class _Execution {
     }
     try {
       FutureOr<GraphQLError?> check = guard?.check(type, def, context);
-      GraphQLError? denied = check is Future<GraphQLError?>
-          ? await check
-          : check;
-      if (denied != null) throw denied;
-      InputValues args = Values.argumentValues(
-        def.args,
-        nodes.first.arguments,
-        variables,
-      );
-      ResolveInfo<Object?> info = ResolveInfo<Object?>(
-        context: context,
-        args: args,
-        fieldName: name,
-        fieldNodes: nodes,
-        parentType: type,
-        returnType: def.type,
-        schema: schema,
-        operation: operation,
-        fragments: fragments,
-        variables: variableValues,
-        responsePath: path,
-      );
-      Object? result = await def.resolveFor(source, info);
-      return await _complete(def.type, type, nodes, path, result);
+      FutureOr<Object?> done;
+      if (check is Future<GraphQLError?>) {
+        done = check.then((GraphQLError? denied) {
+          if (denied != null) throw denied;
+          return _resolve(type, def, source, nodes, path);
+        });
+      } else {
+        if (check != null) throw check;
+        done = _resolve(type, def, source, nodes, path);
+      }
+      return done is Future<Object?>
+          ? _settle(done, def.type, nodes, path)
+          : done;
     } on _Stop {
       rethrow;
     } on _NullBubble {
@@ -580,6 +605,55 @@ final class _Execution {
       return null;
     } catch (e, st) {
       return _fail(e, st, def.type, nodes, path);
+    }
+  }
+
+  /// Calls the resolver of [def] and completes its value.
+  FutureOr<Object?> _resolve(
+    ObjectType<Object?, Object?> type,
+    Field<Object?, Object?> def,
+    Object? source,
+    List<FieldNode> nodes,
+    ResponsePath path,
+  ) {
+    InputValues args = Values.argumentValues(
+      def.args,
+      nodes.first.arguments,
+      variables,
+    );
+    ResolveInfo<Object?> info = ResolveInfo<Object?>(
+      context: context,
+      args: args,
+      fieldName: def.name,
+      fieldNodes: nodes,
+      parentType: type,
+      returnType: def.type,
+      schema: schema,
+      operation: operation,
+      fragments: fragments,
+      variables: variableValues,
+      responsePath: path,
+    );
+    return _complete(def.type, type, nodes, path, def.resolveFor(source, info));
+  }
+
+  /// Waits for the value of a field or a list item of [type]. Its errors
+  /// are handled like the errors of a value that is ready at once.
+  Future<Object?> _settle(
+    Future<Object?> value,
+    GraphQLTypeRef type,
+    List<FieldNode> nodes,
+    ResponsePath path,
+  ) async {
+    try {
+      return await value;
+    } on _Stop {
+      rethrow;
+    } on _NullBubble {
+      if (type is NonNullType) rethrow;
+      return null;
+    } catch (e, st) {
+      return _fail(e, st, type, nodes, path);
     }
   }
 
@@ -614,23 +688,26 @@ final class _Execution {
     return null;
   }
 
-  Future<Object?> _complete(
+  /// Turns the value of a resolver into the value of the response. It
+  /// gives a `Future` only when [result], or a value below it, waits.
+  FutureOr<Object?> _complete(
     GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
     List<FieldNode> nodes,
     ResponsePath path,
     Object? result,
-  ) async {
-    if (result is Future<Object?>) result = await result;
+  ) {
+    if (result is Future<Object?>) {
+      return result.then(
+        (Object? ready) => _complete(type, parent, nodes, path, ready),
+      );
+    }
     if (type is NonNullType) {
-      Object? value = await _complete(type.ofType, parent, nodes, path, result);
-      if (value == null) {
-        throw GraphQLError(
-          'Cannot return null for non-nullable field '
-          '${parent.name}.${nodes.first.name.value}.',
-        );
+      Object? value = _complete(type.ofType, parent, nodes, path, result);
+      if (value is Future<Object?>) {
+        return value.then((Object? ready) => _nonNull(ready, parent, nodes));
       }
-      return value;
+      return _nonNull(value, parent, nodes);
     }
     if (result == null) return null;
     switch (type) {
@@ -641,16 +718,7 @@ final class _Execution {
             '${parent.name}.${nodes.first.name.value}.',
           );
         }
-        List<Object?> items = result.toList();
-        _spend(items.length);
-        List<Future<Object?>> futures = <Future<Object?>>[];
-        for (int i = 0; i < items.length; i++) {
-          _checkStarted(futures);
-          futures.add(
-            _item(type.ofType, parent, nodes, path.index(i), items[i]),
-          );
-        }
-        return Future.wait(futures);
+        return _list(type.ofType, parent, nodes, path, result.toList());
       case ScalarType<Object>():
         return type.serialize(result);
       case EnumType<Object?>():
@@ -665,10 +733,14 @@ final class _Execution {
           result,
         );
         FutureOr<GraphQLError?> check = guard?.checkType(runtime, context);
-        GraphQLError? denied = check is Future<GraphQLError?>
-            ? await check
-            : check;
-        if (denied != null) throw denied;
+        if (check is Future<GraphQLError?>) {
+          Object value = result;
+          return check.then((GraphQLError? denied) {
+            if (denied != null) throw denied;
+            return _object(runtime, nodes, path, value);
+          });
+        }
+        if (check != null) throw check;
         return _object(runtime, nodes, path, result);
       case NonNullType():
         throw StateError('Unreachable: non-null is handled above.');
@@ -677,16 +749,81 @@ final class _Execution {
     }
   }
 
-  Future<Object?> _item(
+  static Object _nonNull(
+    Object? value,
+    ObjectType<Object?, Object?> parent,
+    List<FieldNode> nodes,
+  ) {
+    if (value == null) {
+      throw GraphQLError(
+        'Cannot return null for non-nullable field '
+        '${parent.name}.${nodes.first.name.value}.',
+      );
+    }
+    return value;
+  }
+
+  /// Completes the items of a list. Like [_fields], it gives a `Future`
+  /// only when an item waits.
+  FutureOr<List<Object?>> _list(
+    GraphQLTypeRef type,
+    ObjectType<Object?, Object?> parent,
+    List<FieldNode> nodes,
+    ResponsePath path,
+    List<Object?> items,
+  ) {
+    _spend(items.length);
+    List<Object?> out = List<Object?>.filled(items.length, null);
+    List<Future<void>>? pending;
+    // A non-null item failed at once. The other items still run, so
+    // their errors are kept. Then the list fails.
+    _NullBubble? bubble;
+    for (int i = 0; i < items.length; i++) {
+      _checkStarted(pending);
+      Object? value;
+      try {
+        value = _item(type, parent, nodes, path.index(i), items[i]);
+      } on _NullBubble catch (b) {
+        bubble = b;
+        continue;
+      } on _Stop {
+        _ignore(pending);
+        rethrow;
+      }
+      if (value is Future<Object?>) {
+        (pending ??= <Future<void>>[]).add(
+          value.then((Object? v) {
+            out[i] = v;
+          }),
+        );
+      } else {
+        out[i] = value;
+      }
+    }
+    if (pending == null) {
+      if (bubble != null) throw bubble;
+      return out;
+    }
+    _NullBubble? failed = bubble;
+    return Future.wait(pending).then((_) {
+      if (failed != null) throw failed;
+      return out;
+    });
+  }
+
+  FutureOr<Object?> _item(
     GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
     List<FieldNode> nodes,
     ResponsePath path,
     Object? item,
-  ) async {
+  ) {
     _check();
     try {
-      return await _complete(type, parent, nodes, path, item);
+      Object? value = _complete(type, parent, nodes, path, item);
+      return value is Future<Object?>
+          ? _settle(value, type, nodes, path)
+          : value;
     } on _Stop {
       rethrow;
     } on _NullBubble {
@@ -697,7 +834,7 @@ final class _Execution {
     }
   }
 
-  Future<Map<String, Object?>> _object(
+  FutureOr<Map<String, Object?>> _object(
     ObjectType<Object?, Object?> type,
     List<FieldNode> nodes,
     ResponsePath path,
