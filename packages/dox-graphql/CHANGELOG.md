@@ -6,6 +6,12 @@
   they stayed in memory until the request was done. In a test with 256
   requests at the same time, a list of 20 rows went from 2,400 to 25,000
   requests each second. The peak memory went from 260 MB to 45 MB.
+- A field or a list item that waits makes approximately half of the
+  `Future` objects that it made before. The engine does not use
+  `Future.wait` for the fields of an object and the items of a list. In
+  a test on Postgres with dox_graphql_orm (20 rows, each with a list
+  relation, 256 requests at the same time), the requests each second
+  went from 4,900 to 6,000.
 - The results of a query do not change. When more than one field fails,
   the sequence of the items in `errors` can be different.
 - A request that stops at `maxNodes` does not leave errors with no

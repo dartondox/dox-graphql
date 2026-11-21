@@ -286,6 +286,67 @@ final class GraphQLExecutor<C> {
 
 /// Thrown up the tree after a non-null field failed. The error is already
 /// in the list; the nearest nullable parent becomes null.
+/// Waits for the values of one object or one list that are not ready.
+///
+/// One value costs one `Future` here, where `Future.wait` costs two. An
+/// error of a value is always handled, so after a stop nothing is left
+/// to ignore. Like `Future.wait`, it waits for all values, then fails
+/// with the first error.
+final class _Join<T> {
+  _Join(this._out);
+
+  final T _out;
+  final Completer<T> _done = Completer<T>();
+  int _waiting = 0;
+  bool _closed = false;
+  _NullBubble? _bubble;
+  Object? _error;
+  StackTrace? _stack;
+
+  /// One closure for all values, not one for each.
+  late final void Function(Object error, StackTrace stack) _onError = _failed;
+
+  /// Waits for [value], then gives it to [put].
+  void add(Future<Object?> value, void Function(Object? ready) put) {
+    _waiting++;
+    value.then((Object? ready) {
+      put(ready);
+      _one();
+    }, onError: _onError);
+  }
+
+  /// No more values come. The result is the output, or the first error,
+  /// or [bubble]: a non-null value that failed at once.
+  Future<T> close(_NullBubble? bubble) {
+    _bubble = bubble;
+    _closed = true;
+    if (_waiting == 0) _finish();
+    return _done.future;
+  }
+
+  void _failed(Object error, StackTrace stack) {
+    if (_error == null) {
+      _error = error;
+      _stack = stack;
+    }
+    _one();
+  }
+
+  void _one() {
+    _waiting--;
+    if (_waiting == 0 && _closed) _finish();
+  }
+
+  void _finish() {
+    Object? error = _error ?? _bubble;
+    if (error != null) {
+      _done.completeError(error, _stack);
+    } else {
+      _done.complete(_out);
+    }
+  }
+}
+
 final class _NullBubble {
   const _NullBubble();
 }
@@ -406,21 +467,6 @@ final class _Execution {
     if (stop != null) throw stop;
   }
 
-  /// Like [_check], for a loop that starts futures. The started ones are
-  /// not awaited after a stop, so their errors are ignored.
-  void _checkStarted(List<Future<void>>? started) {
-    if (_stopped == null) return;
-    _ignore(started);
-    _check();
-  }
-
-  static void _ignore(List<Future<void>>? started) {
-    if (started == null) return;
-    for (Future<void> f in started) {
-      f.ignore();
-    }
-  }
-
   /// Counts resolved fields and list items. Past [maxNodes], it stops the
   /// whole request.
   void _spend(int nodes) {
@@ -516,13 +562,13 @@ final class _Execution {
     ResponsePath? path,
   ) {
     Map<String, Object?> out = <String, Object?>{};
-    List<Future<void>>? pending;
+    _Join<Map<String, Object?>>? pending;
     // A non-null field failed at once. Its siblings still run, so their
     // errors are kept. Then this object fails.
     _NullBubble? bubble;
     for (MapEntry<String, List<FieldNode>> e in fields.entries) {
       // Stop starting work at once when the request was stopped.
-      _checkStarted(pending);
+      _check();
       String key = e.key;
       Object? value;
       try {
@@ -530,19 +576,15 @@ final class _Execution {
       } on _NullBubble catch (b) {
         bubble = b;
         continue;
-      } catch (_) {
-        // A stop or a stack overflow: the request ends here.
-        _ignore(pending);
-        rethrow;
       }
       if (value is Future<Object?>) {
         // Keeps the place of the key: the fields stay in query order.
         out[key] = null;
-        (pending ??= <Future<void>>[]).add(
-          value.then((Object? v) {
-            out[key] = v;
-          }),
-        );
+        (pending ??= _Join<Map<String, Object?>>(out)).add(value, (
+          Object? ready,
+        ) {
+          out[key] = ready;
+        });
       } else if (!identical(value, _skip)) {
         out[key] = value;
       }
@@ -551,11 +593,7 @@ final class _Execution {
       if (bubble != null) throw bubble;
       return out;
     }
-    _NullBubble? failed = bubble;
-    return Future.wait(pending).then((_) {
-      if (failed != null) throw failed;
-      return out;
-    });
+    return pending.close(bubble);
   }
 
   /// Runs mutation root fields one after another.
@@ -591,19 +629,25 @@ final class _Execution {
     }
     try {
       FutureOr<GraphQLError?> check = guard?.check(type, def, context);
-      FutureOr<Object?> done;
+      GraphQLTypeRef inner = _nullable(def.type);
       if (check is Future<GraphQLError?>) {
-        done = check.then((GraphQLError? denied) {
+        Future<Object?> done = check.then((GraphQLError? denied) {
           if (denied != null) throw denied;
-          return _resolve(type, def, source, nodes, path);
+          Object? result = _resolve(type, def, source, nodes, path);
+          return _complete(inner, type, nodes, path, result);
         });
-      } else {
-        if (check != null) throw check;
-        done = _resolve(type, def, source, nodes, path);
+        return _settle(done, def.type, type, nodes, path);
       }
-      return done is Future<Object?>
-          ? _settle(done, def.type, nodes, path)
-          : done;
+      if (check != null) throw check;
+      Object? result = _resolve(type, def, source, nodes, path);
+      if (result is Future<Object?>) {
+        return _settle(result, def.type, type, nodes, path, raw: true);
+      }
+      Object? value = _complete(inner, type, nodes, path, result);
+      if (value is Future<Object?>) {
+        return _settle(value, def.type, type, nodes, path);
+      }
+      return def.type is NonNullType ? _nonNull(value, type, nodes) : value;
     } on _Stop {
       rethrow;
     } on StackOverflowError {
@@ -616,8 +660,8 @@ final class _Execution {
     }
   }
 
-  /// Calls the resolver of [def] and completes its value.
-  FutureOr<Object?> _resolve(
+  /// Calls the resolver of [def]. Its value is not completed yet.
+  Object? _resolve(
     ObjectType<Object?, Object?> type,
     Field<Object?, Object?> def,
     Object? source,
@@ -642,19 +686,34 @@ final class _Execution {
       variables: variableValues,
       responsePath: path,
     );
-    return _complete(def.type, type, nodes, path, def.resolveFor(source, info));
+    return def.resolveFor(source, info);
   }
+
+  static GraphQLTypeRef _nullable(GraphQLTypeRef type) =>
+      type is NonNullType ? type.ofType : type;
 
   /// Waits for the value of a field or a list item of [type]. Its errors
   /// are handled like the errors of a value that is ready at once.
+  ///
+  /// [value] is completed for the nullable type of [type] already. With
+  /// [raw], it is the value of a resolver, or a list item: it is completed
+  /// here. This function does both waits and the non-null check, so a
+  /// place that waits costs one `Future`, not one for each step.
   Future<Object?> _settle(
     Future<Object?> value,
     GraphQLTypeRef type,
+    ObjectType<Object?, Object?> parent,
     List<FieldNode> nodes,
-    ResponsePath path,
-  ) async {
+    ResponsePath path, {
+    bool raw = false,
+  }) async {
     try {
-      return await value;
+      Object? ready = await value;
+      if (raw) {
+        Object? done = _complete(_nullable(type), parent, nodes, path, ready);
+        ready = done is Future<Object?> ? await done : done;
+      }
+      return type is NonNullType ? _nonNull(ready, parent, nodes) : ready;
     } on _Stop {
       rethrow;
     } on StackOverflowError {
@@ -700,6 +759,9 @@ final class _Execution {
 
   /// Turns the value of a resolver into the value of the response. It
   /// gives a `Future` only when [result], or a value below it, waits.
+  ///
+  /// [type] is never a non-null type: the caller does the non-null check
+  /// (see [_nullable] and [_nonNull]).
   FutureOr<Object?> _complete(
     GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
@@ -711,13 +773,6 @@ final class _Execution {
       return result.then(
         (Object? ready) => _complete(type, parent, nodes, path, ready),
       );
-    }
-    if (type is NonNullType) {
-      Object? value = _complete(type.ofType, parent, nodes, path, result);
-      if (value is Future<Object?>) {
-        return value.then((Object? ready) => _nonNull(ready, parent, nodes));
-      }
-      return _nonNull(value, parent, nodes);
     }
     if (result == null) return null;
     switch (type) {
@@ -753,7 +808,7 @@ final class _Execution {
         if (check != null) throw check;
         return _object(runtime, nodes, path, result);
       case NonNullType():
-        throw StateError('Unreachable: non-null is handled above.');
+        throw StateError('Unreachable: the caller handles non-null.');
       case InputObjectType():
         throw StateError('Input type ${type.name} as an output type.');
     }
@@ -789,30 +844,27 @@ final class _Execution {
       rethrow;
     }
     List<Object?> out = List<Object?>.filled(items.length, null);
-    List<Future<void>>? pending;
+    _Join<List<Object?>>? pending;
     // A non-null item failed at once. The other items still run, so
     // their errors are kept. Then the list fails.
     _NullBubble? bubble;
     for (int i = 0; i < items.length; i++) {
       Object? value;
       try {
-        _checkStarted(pending);
+        _check();
         value = _item(type, parent, nodes, path.index(i), items[i]);
       } on _NullBubble catch (b) {
         bubble = b;
         continue;
       } catch (_) {
         // A stop or a stack overflow: the request ends here.
-        _ignore(pending);
         _ignoreItems(items, i);
         rethrow;
       }
       if (value is Future<Object?>) {
-        (pending ??= <Future<void>>[]).add(
-          value.then((Object? v) {
-            out[i] = v;
-          }),
-        );
+        (pending ??= _Join<List<Object?>>(out)).add(value, (Object? ready) {
+          out[i] = ready;
+        });
       } else {
         out[i] = value;
       }
@@ -821,11 +873,7 @@ final class _Execution {
       if (bubble != null) throw bubble;
       return out;
     }
-    _NullBubble? failed = bubble;
-    return Future.wait(pending).then((_) {
-      if (failed != null) throw failed;
-      return out;
-    });
+    return pending.close(bubble);
   }
 
   /// The items from [start] that are futures were not started, so nothing
@@ -846,10 +894,14 @@ final class _Execution {
   ) {
     _check();
     try {
-      Object? value = _complete(type, parent, nodes, path, item);
-      return value is Future<Object?>
-          ? _settle(value, type, nodes, path)
-          : value;
+      if (item is Future<Object?>) {
+        return _settle(item, type, parent, nodes, path, raw: true);
+      }
+      Object? value = _complete(_nullable(type), parent, nodes, path, item);
+      if (value is Future<Object?>) {
+        return _settle(value, type, parent, nodes, path);
+      }
+      return type is NonNullType ? _nonNull(value, parent, nodes) : value;
     } on _Stop {
       rethrow;
     } on StackOverflowError {
