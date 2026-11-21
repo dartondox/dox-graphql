@@ -284,8 +284,6 @@ final class GraphQLExecutor<C> {
   }
 }
 
-/// Thrown up the tree after a non-null field failed. The error is already
-/// in the list; the nearest nullable parent becomes null.
 /// Waits for the values of one object or one list that are not ready.
 ///
 /// One value costs one `Future` here, where `Future.wait` costs two. An
@@ -347,6 +345,8 @@ final class _Join<T> {
   }
 }
 
+/// Thrown up the tree after a non-null field failed. The error is already
+/// in the list; the nearest nullable parent becomes null.
 final class _NullBubble {
   const _NullBubble();
 }
