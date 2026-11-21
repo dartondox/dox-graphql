@@ -8,6 +8,12 @@
   requests each second. The peak memory went from 260 MB to 45 MB.
 - The results of a query do not change. When more than one field fails,
   the sequence of the items in `errors` can be different.
+- A request that stops at `maxNodes` does not leave errors with no
+  handler. Before, a list of `Future` items that failed could do this.
+- A request that goes above `maxNodes` always gives the "too much data"
+  error. Before, a non-null field that failed could hide it.
+- With a very high `maxDepth`, a stack overflow in a deep query gives the
+  "nested too deep" error, not a field error.
 
 ## 0.0.1
 
