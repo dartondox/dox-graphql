@@ -63,11 +63,9 @@ class GraphQLOrm {
     try {
       return read(parent);
     } on Error catch (e) {
-      // ponytail: LateError (LateInitializationError) is not a public type
-      if (e.runtimeType.toString() == 'LateError' &&
-          e.toString().contains('has not been initialized')) {
-        return null;
-      }
+      // ponytail: LateError is not a public type, and its runtimeType
+      // name is renamed by `--obfuscate`. Its message is not.
+      if (e.toString().contains('has not been initialized')) return null;
       rethrow;
     }
   }
