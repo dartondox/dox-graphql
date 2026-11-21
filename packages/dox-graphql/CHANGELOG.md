@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.1
 
 - One annotation for each operation of a model. A model shows what it
   gives in its annotations:

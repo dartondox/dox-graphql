@@ -79,6 +79,9 @@ has no query and no mutation.
 
 ### Policies
 
+Policies need dox_auth 3.2.2 or newer (`Gate.hasAbility`). The
+generated code uses it.
+
 - `can:` is an ability of the policy of the model, like `Ability.view`
   of dox_auth. The field asks `Gate.allows` before it gives or writes
   data. A denied guest gets `UNAUTHENTICATED`, and a denied user gets
