@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Fix: a relation to a model that can refuse is now nullable. The model
+  has a `policy:`, or the field can need a login. Before, a refused
+  relation made the whole parent null. Now only that field is null. List
+  items stay non-null: a refused row is dropped.
+- Fix: the update and delete mutations of a model with `owner:` need a
+  login, like create. A guest gets `UNAUTHENTICATED` before the lookup.
+- `policy:` now works without `dto:`. The model has the guarded reads
+  and no mutations.
 - A policy that lists `viewAny`, `view` or `create` now guards the
   reads and the create. The list query asks `viewAny` before the query.
   The find query asks `view` on the row. The list query and the

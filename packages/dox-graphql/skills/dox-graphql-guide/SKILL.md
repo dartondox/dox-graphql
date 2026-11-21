@@ -104,8 +104,10 @@ The `id`, the columns and the relations become fields. The model gets these auto
 | `deletePost(id)` | `dto:` and `policy:` | Gives `true`, or `false` if the id is not found. |
 
 - `auth: true` is only a login check. To control which rows a user can read, give the model a `policy:` with `viewAny` and `view` (see section 5). Put secret columns in `hidden`.
+- `policy:` works without `dto:`. The model then has the guarded reads and no mutations.
+- A relation to a model that can refuse (it has a `policy:`, or it can need a login) is nullable in the schema, like `[Comment!]`. When the target refuses, only that field is `null`. The parent keeps its other fields. A relation to a model with `auth: false` and no policy stays non-null.
 - `queries: false` removes the list and find queries. The type stays for relations and resolvers.
-- `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it.
+- `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it. Create, update and delete then need a login.
 - A column or relation in `hidden` of the model is not a field. `hidden` uses the snake_case name of the column or relation, for example `password_hash`, not the Dart field name. If `visibleFields` of the model is not empty, only those names are fields. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.
 - `@GraphQLField()` on a getter makes a computed field.
 - Dox loads a relation for all parents of the request in one query. A relation that is already loaded runs no query.

@@ -151,11 +151,7 @@ class SchemaReader {
     DartType? dto = type.getField('dto')?.toTypeValue();
     DartType? policy = type.getField('policy')?.toTypeValue();
     if (model == null && policy != null) {
-      _fail(
-        where,
-        '`policy:` works only on a model of dox_orm with `dto:`.',
-        element,
-      );
+      _fail(where, '`policy:` works only on a model of dox_orm.', element);
     }
     if (model == null && dto != null) {
       _fail(
@@ -198,14 +194,6 @@ class SchemaReader {
       spec.dto = dtoElement;
     }
     if (policy != null) {
-      if (dto == null) {
-        _fail(
-          where,
-          '`policy:` needs `dto:`: the policy guards the update and delete '
-          'mutations, and they come from the DTO.',
-          element,
-        );
-      }
       InterfaceType? base = _policyOf(policy, element);
       if (base == null) {
         _fail(
@@ -368,6 +356,7 @@ class SchemaReader {
         dartName,
         field.type,
         field,
+        relation: true,
         resolve: _relation(field, model),
         // the name toJson() gives a relation, so `hidden` can name it
         column: snakeCase(dartName),
@@ -598,6 +587,9 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
     }
     String key = camelCase(spec.primaryKey);
     String? owner = spec.owner;
+    // A model with an owner is written by a logged-in user only. The login
+    // check runs before the resolver, so a guest never reaches the lookup.
+    bool? ownerAuth = owner != null ? true : spec.auth;
     String ownerSet = owner == null
         ? ''
         : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
@@ -625,7 +617,7 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allowCr
         where: hint,
         auto: true,
         // the owner is the logged-in user, so there must be one
-        auth: owner != null ? true : spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -684,7 +676,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         resolve: '_update$name(info)',
         where: hint,
         auto: true,
-        auth: spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -698,7 +690,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         resolve: '_delete$name(info)',
         where: hint,
         auto: true,
-        auth: spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -770,12 +762,20 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     Element annotated, {
     String? resolve,
     String? column,
+    bool relation = false,
   }) {
     String where = '${spec.element.displayName}.$dartName';
     DartObject? field = annotation(annotated, 'GraphQLField');
     String name = _string(field, 'name') ?? dartName;
     _checkName(name, where, member);
     String gql = _outputType(_unwrapFuture(type), where, member);
+    bool? fieldAuth = field?.getField('auth')?.toBoolValue();
+    if (relation && gql.endsWith('.nonNull') && _mayRefuse(type, fieldAuth)) {
+      // The target can refuse (policy or login), so the field is null then.
+      // A non-null field would null the parent too. List items stay
+      // non-null: a policy drops a row, it does not null it.
+      gql = gql.substring(0, gql.length - '.nonNull'.length);
+    }
     _addField(
       spec.fields,
       FieldSpec(
@@ -785,12 +785,28 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
-        auth: field?.getField('auth')?.toBoolValue(),
+        auth: fieldAuth,
         column: column,
       ),
       spec.name,
       member,
     );
+  }
+
+  /// True when a relation of Dart type [type] can be refused at run time:
+  /// the target has a `policy:`, or the field can need a login. A field
+  /// with no `auth:` on a type with no `auth:` uses the app default (a
+  /// login when the app has an auth middleware), which is not known here.
+  bool _mayRefuse(DartType type, bool? fieldAuth) {
+    DartType related = _unwrapFuture(type);
+    if (related is InterfaceType && related.isDartCoreList) {
+      related = related.typeArguments.first;
+    }
+    Element? element = related is InterfaceType ? related.element : null;
+    ObjectSpec? target = objects[element];
+    if (target == null) return false;
+    if (target.policy || target.auth == true) return true;
+    return fieldAuth ?? target.auth != false;
   }
 
   // ---------------------------------------------------------------------

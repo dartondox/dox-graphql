@@ -42,7 +42,14 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
 - `createPost` comes from `dto:`. `updatePost` and `deletePost` exist only
   with `policy:`.
 - `owner: 'userId'` makes `createPost` set `userId` to the logged-in
-  user. Create then needs a login.
+  user. Create, update and delete then need a login. A guest gets
+  `UNAUTHENTICATED` before any database read.
+- `policy:` also works without `dto:`. The model then has the guarded
+  reads and no mutations.
+- A relation to a model that can refuse (it has a `policy:`, or it can
+  need a login) is nullable in the schema, like `[Comment!]` and
+  `Post`. When the target refuses, only that field is null. The parent
+  keeps its other fields.
 - The policy can also guard the reads and the create. GraphQL asks Gate
   at run time which abilities the registered policy lists in
   `abilities`. The keys must be `viewAny`, `view` and `create`. The

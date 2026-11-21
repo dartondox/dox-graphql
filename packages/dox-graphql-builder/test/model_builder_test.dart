@@ -131,7 +131,7 @@ class Post extends Model<Post> {
         contains(
           flat(
             "if (show('readers')) Field<i1.Post, DoxGraphQLContext>('readers', "
-            '_tUser.nonNull.list.nonNull,',
+            '_tUser.nonNull.list,',
           ),
         ),
       );
@@ -489,6 +489,89 @@ class Blog extends Model<Blog> {
       );
     });
 
+    test('policy: works without dto: and gives no mutations', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel()
+@GraphQLType(policy: PostPolicy)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+'''),
+      );
+      expect(out, isNot(startsWith('ERROR:')));
+      expect(out, contains(flat("_allowIf<i1.Post>(info, 'viewAny')")));
+      expect(out, contains('_findPost'));
+      expect(out, isNot(contains('createPost')));
+      expect(out, isNot(contains('updatePost')));
+      expect(out, isNot(contains('deletePost')));
+    });
+
+    test(
+      'a relation that can refuse is nullable, the others are not',
+      () async {
+        String out = flat(
+          await _build('''
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel(table: 'users')
+@GraphQLType(auth: false)
+class User extends Model<User> {
+  @Column()
+  String? name;
+}
+
+@DoxModel()
+@GraphQLType(policy: PostPolicy, auth: false)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+
+@DoxModel(table: 'comments')
+@GraphQLType(auth: true)
+class Comment extends Model<Comment> {
+  @Column()
+  String? body;
+}
+
+@DoxModel(table: 'blogs')
+@GraphQLType(auth: false)
+class Blog extends Model<Blog> {
+  @HasMany(Post)
+  List<Post> posts = <Post>[];
+  @BelongsTo(Post)
+  late Post first;
+  @HasMany(Comment)
+  List<Comment> comments = <Comment>[];
+  @HasMany(User)
+  List<User> readers = <User>[];
+  @BelongsTo(User)
+  late User editor;
+}
+'''),
+        );
+        // a policy or a login can refuse: the field is nullable, the items
+        // are not (a refused row is dropped)
+        expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
+        expect(out, contains(flat("'first', _tPost,")));
+        expect(out, contains(flat("'comments', _tComment.nonNull.list,")));
+        // a public type with no policy never refuses
+        expect(out, contains(flat("'readers', _tUser.nonNull.list.nonNull,")));
+        expect(out, contains(flat("'editor', _tUser.nonNull,")));
+      },
+    );
+
     test('policy: must be a Policy of the model', () async {
       String out = await _build('''
 class OtherPolicy {}
@@ -692,8 +775,13 @@ class Post extends Model<Post> {
         await _build(
           '''
 $_user
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
 @DoxModel(table: 'posts')
-@GraphQLType(dto: TitleDto, auth: false, owner: 'userId')
+@GraphQLType(dto: TitleDto, auth: false, owner: 'userId', policy: PostPolicy)
 class Post extends Model<Post> {
   @Column()
   String? title;
@@ -720,6 +808,9 @@ class TitleDto {
         ),
       );
       expect(out, matches(RegExp("\\('createPost',[^,]*,auth:true,")));
+      // a guest is stopped before the row lookup, like for create
+      expect(out, matches(RegExp("\\('updatePost',[^,]*,auth:true,")));
+      expect(out, matches(RegExp("\\('deletePost',[^,]*,auth:true,")));
       expect(out, matches(RegExp("\\('posts',[^,]*,auth:false,")));
     });
 

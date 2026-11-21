@@ -372,7 +372,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'updateNote',
         _tNote,
-        auth: false,
+        auth: true,
         args: <Argument>[
           Argument('id', graphqlId.nonNull),
           Argument('input', _iUpdateNoteInput.nonNull),
@@ -383,7 +383,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'deleteNote',
         graphqlBoolean.nonNull,
-        auth: false,
+        auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             _deleteNote(info),
@@ -943,7 +943,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('comments'))
             Field<i9.Post, DoxGraphQLContext>(
               'comments',
-              _tComment.nonNull.list.nonNull,
+              _tComment.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i4.Comment>(
                     s,
@@ -955,7 +955,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('tags'))
             Field<i9.Post, DoxGraphQLContext>(
               'tags',
-              _tTag.nonNull.list.nonNull,
+              _tTag.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i11.Tag>(
                     s,
@@ -968,7 +968,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('images'))
             Field<i9.Post, DoxGraphQLContext>(
               'images',
-              _tImage.nonNull.list.nonNull,
+              _tImage.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i6.Image>(
                     s,
@@ -1093,7 +1093,7 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
       if (show('posts'))
         Field<i12.User, DoxGraphQLContext>(
           'posts',
-          _tPost.nonNull.list.nonNull,
+          _tPost.nonNull.list,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i9.Post>(info, 'viewAny').then(
                 (_) => _viewList<i9.Post>(
@@ -1122,7 +1122,7 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
       if (show('articles'))
         Field<i12.User, DoxGraphQLContext>(
           'articles',
-          _tArticle.nonNull.list.nonNull,
+          _tArticle.nonNull.list,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i3.Article>(info, 'viewAny').then(
                 (_) => _viewList<i3.Article>(
@@ -1627,7 +1627,6 @@ Future<bool> _deleteMember(ResolveInfo<DoxGraphQLContext> info) async {
 /// denies gets the same error for an id that exists and one that does not.
 Future<i8.Note?> _findNote(ResolveInfo<DoxGraphQLContext> info) async {
   bool view = Gate.hasAbility<i8.Note>('view');
-  if (view) await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),
@@ -1656,7 +1655,6 @@ Future<i8.Note> _createNote(ResolveInfo<DoxGraphQLContext> info) async {
 /// Sets the fields the client sent on a Note. Null when there is no
 /// Note with that id and the policy allows the update of a blank one.
 Future<i8.Note?> _updateNote(ResolveInfo<DoxGraphQLContext> info) async {
-  await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),
@@ -1686,7 +1684,6 @@ Future<i8.Note?> _updateNote(ResolveInfo<DoxGraphQLContext> info) async {
 /// Deletes a Note. False when there is no Note with that id and the
 /// policy allows the delete of a blank one.
 Future<bool> _deleteNote(ResolveInfo<DoxGraphQLContext> info) async {
-  await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),

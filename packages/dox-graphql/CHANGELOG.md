@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Docs: `policy:` works without `dto:`. `owner:` also guards update and
+  delete.
 - New: `maxRootFields` in `GraphQLConfig` and `GraphQLExecutor`, 50 by
   default. It is the maximum number of top-level fields in one
   operation, after fragments are expanded. Each alias counts. A query

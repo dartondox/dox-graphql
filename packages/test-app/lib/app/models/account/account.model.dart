@@ -23,5 +23,6 @@ class Account extends AccountGenerator {
   String? secret;
 
   @HasMany(Doc)
-  List<Doc>? docs;
+  // not nullable in Dart, so the field is the only thing that can be null
+  List<Doc> docs = <Doc>[];
 }

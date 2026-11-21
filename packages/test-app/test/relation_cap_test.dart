@@ -72,7 +72,10 @@ void main() {
       client,
       '{ post(id: "$big") { title comments { id } } }',
     );
-    expect(res['data'], <String, Object?>{'post': null});
+    // only the relation is null: the parent keeps its other fields
+    expect(res['data'], <String, Object?>{
+      'post': <String, Object?>{'title': 'big', 'comments': null},
+    });
     List<Object?> errors = res['errors'] as List<Object?>;
     expect(
       (errors.single as Map<String, Object?>)['message'],
@@ -88,7 +91,9 @@ void main() {
       client,
       '{ post(id: "$big") { tags { name } } }',
     );
-    expect(res['data'], <String, Object?>{'post': null});
+    expect(res['data'], <String, Object?>{
+      'post': <String, Object?>{'tags': null},
+    });
     List<Object?> errors = res['errors'] as List<Object?>;
     expect(
       (errors.single as Map<String, Object?>)['message'],
