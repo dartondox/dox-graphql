@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.1
 
 - Reads the operation annotations of a model: `@GraphQLAll`,
   `@GraphQLPaginate`, `@GraphQLFind`, `@GraphQLCreate`,

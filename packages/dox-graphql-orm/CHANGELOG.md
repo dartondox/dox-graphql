@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.1
 
 - New: `GraphQLOrm.paginate` for `@GraphQLPaginate`. It uses `paginate`
   of dox_orm: one count query and one page query. A `first` above 100,
