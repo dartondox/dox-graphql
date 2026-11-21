@@ -1,3 +1,14 @@
+## Unreleased
+
+- A query with many fields is faster and uses less memory. The engine
+  now makes a `Future` only for a value that waits, like the value of an
+  async resolver. Before, each field made some `Future` objects, and
+  they stayed in memory until the request was done. In a test with 256
+  requests at the same time, a list of 20 rows went from 2,400 to 25,000
+  requests each second. The peak memory went from 260 MB to 45 MB.
+- The results of a query do not change. When more than one field fails,
+  the sequence of the items in `errors` can be different.
+
 ## 0.0.1
 
 - One annotation for each operation of a model. A model shows what it
