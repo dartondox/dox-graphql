@@ -1097,13 +1097,11 @@ class R {
           ),
         ),
       );
+      // the result of a create is not filtered: the client sent the row
       expect(
         out,
         contains(
-          flat(
-            "_filterOne<i1.Post>(info, 'view', "
-            'Future<i1.Post?>.value(_createPost(info)))',
-          ),
+          flat('ResolveInfo<DoxGraphQLContext> info) => _createPost(info))'),
         ),
       );
     });

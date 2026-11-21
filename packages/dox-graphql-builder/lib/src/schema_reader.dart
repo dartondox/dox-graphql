@@ -695,12 +695,9 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allow
         type: '${spec.variable}.nonNull',
         description: op.description,
         args: <ArgSpec>[ArgSpec('input', '${input.variable}.nonNull')],
-        resolve: _filtered(
-          element.thisType,
-          '_create$name(info)',
-          '@GraphQLCreate on ${element.displayName}',
-          element,
-        ),
+        // ponytail: no filter: the client just sent this row, so showing it
+        // back shows nothing new, and a null would look like a failed save
+        resolve: '_create$name(info)',
         where: '@GraphQLCreate on ${element.displayName}',
         // the owner is the logged-in user, so there must be one
         guard: op.guard || owner != null,

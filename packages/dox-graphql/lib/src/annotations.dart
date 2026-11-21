@@ -66,8 +66,8 @@ class GraphQL {
   ///
   /// It does not stop a write: `@GraphQLUpdate` and `@GraphQLDelete` ask
   /// only their `can:`. A row that `filter:` hides can still be updated or
-  /// deleted when the operation has no `can:`. A created row that
-  /// `filter:` hides is saved, and the create returns null. An interface
+  /// deleted when the operation has no `can:`. The result of a create is
+  /// not filtered: the client gets back the row it sent. An interface
   /// or union field that picks this type for its value is not filtered:
   /// call `Gate` in its resolver.
   ///

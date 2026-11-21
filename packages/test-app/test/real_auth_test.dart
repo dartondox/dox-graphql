@@ -138,15 +138,17 @@ void main() {
     });
 
     test(
-      'a created row that the filter denies is saved, and is null',
+      'a created row that the filter denies is saved and given back',
       () async {
         int before = await count();
         Map<String, Object?> res = await send(
-          'mutation { createNote(input: {title: "hidden"}) { id } }',
+          'mutation { createNote(input: {title: "hidden"}) { title } }',
           bearer: token,
         );
         expect(res, <String, Object?>{
-          'data': <String, Object?>{'createNote': null},
+          'data': <String, Object?>{
+            'createNote': <String, Object?>{'title': 'hidden'},
+          },
         });
         expect(await count(), before + 1);
       },

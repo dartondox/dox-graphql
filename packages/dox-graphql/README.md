@@ -97,14 +97,13 @@ has no query and no mutation.
   - Your own `@GraphQLQuery`, `@GraphQLMutation`, `@GraphQLResolveField`,
     `@GraphQLField` getters and the fields of plain classes: a single
     value is null, and a list leaves the rows out.
-  - The results of `createPost` and `updatePost` are null for a hidden
-    row.
+  - The result of `updatePost` is null for a hidden row. The result of
+    `createPost` is not filtered: the client gets back the row it sent.
   - `total` and `lastPage` of `paginatorInfo` also count the hidden rows.
   - The filter does not decide a write. Update and delete ask only
     their `can:`.
   - A row that `filter:` hides can still be updated or deleted when the
-    operation has no `can:`. A created row that `filter:` hides is
-    saved, and the create returns null.
+    operation has no `can:`.
 - The builder gives a warning when `@GraphQLUpdate` or `@GraphQLDelete`
   has no `can:` and no `guard:`.
 - For your own ability, write a constant on the policy, like
