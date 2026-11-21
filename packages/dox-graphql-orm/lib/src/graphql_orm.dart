@@ -40,19 +40,36 @@ class GraphQLOrm {
   /// no query. Else the relation is loaded for every parent of this
   /// request in one batch: one `WHERE ... IN` query per relation and
   /// level, so there is no N+1 problem.
-  static Future<R> relation<P extends Model<P>, R>(
+  ///
+  /// A relation with no related row gives null, also for a `late` field
+  /// (not nullable in Dart) that the model leaves unset.
+  static Future<R?> relation<P extends Model<P>, R>(
     P parent,
     String name,
     DoxGraphQLContext context,
     R Function(P parent) read,
   ) async {
-    if (parent.getPreload().contains(name)) return read(parent);
+    if (parent.getPreload().contains(name)) return _readOrNull(parent, read);
     DataLoader<P, bool> loader = context.loader<P, bool>(
       'dox_graphql_orm:$P.$name',
       () => DataLoader<P, bool>((List<P> parents) => _load(parents, name)),
     );
     await loader.load(parent);
-    return read(parent);
+    return _readOrNull(parent, read);
+  }
+
+  /// [read] of [parent], or null when a `late` field is not set.
+  static R? _readOrNull<P, R>(P parent, R Function(P parent) read) {
+    try {
+      return read(parent);
+    } on Error catch (e) {
+      // ponytail: LateError (LateInitializationError) is not a public type
+      if (e.runtimeType.toString() == 'LateError' &&
+          e.toString().contains('has not been initialized')) {
+        return null;
+      }
+      rethrow;
+    }
   }
 
   /// The list relation [name] of [parent] (`HasMany`, `ManyToMany`,

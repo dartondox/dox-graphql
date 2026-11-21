@@ -100,6 +100,22 @@ void main() {
       expect(res.toString(), isNot(contains('Bob doc')));
     });
 
+    test('a relation with no row is null, with no error', () async {
+      // Bob doc has no parent, and `parent` is a `late` field
+      Map<String, Object?> res = await run(
+        client,
+        '{ docs { title parent { title } } }',
+        user: 'bob',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{'title': 'Bob doc', 'parent': null},
+          ],
+        },
+      });
+    });
+
     test('view works through a HasOne relation too', () async {
       // the child of Bob doc is Ann doc: bob may not view it
       Map<String, Object?> res = await run(
