@@ -2,7 +2,7 @@
 
 The [dox_orm](https://pub.dev/packages/dox_orm) part of
 [dox_graphql](https://pub.dev/packages/dox_graphql). The code that
-`dox_graphql_builder` writes for `@GraphQLType()` models uses it:
+`dox_graphql_builder` writes for `@GraphQL()` models uses it:
 
 - the list and find queries of `@GraphQLAll` and `@GraphQLFind`, like
   `posts(limit: 10)` and `post(id: "1")`,
@@ -14,7 +14,7 @@ The [dox_orm](https://pub.dev/packages/dox_orm) part of
 - the create, update and delete mutations of `@GraphQLCreate`,
   `@GraphQLUpdate` and `@GraphQLDelete`.
 
-Add it to an app that has `@GraphQLType()` on its models:
+Add it to an app that has `@GraphQL()` on its models:
 
 ```yaml
 dependencies:

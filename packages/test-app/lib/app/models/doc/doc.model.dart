@@ -10,7 +10,7 @@ part 'doc.model.g.dart';
 /// to Doc drop the rows that `view` denies. Find, update and delete need
 /// a login, so a guest is stopped before the row lookup.
 @DoxModel(table: 'docs')
-@GraphQLType(filter: Ability.view)
+@GraphQL(filter: Ability.view)
 @GraphQLAll(can: Ability.viewAny)
 @GraphQLPaginate(can: Ability.viewAny)
 @GraphQLFind(can: Ability.view, guard: true)

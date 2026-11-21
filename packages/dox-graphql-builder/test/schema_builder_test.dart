@@ -28,7 +28,7 @@ $_hello
 enum Genre { novel, poetry }
 
 /// A book.
-@GraphQLType()
+@GraphQL()
 class Book {
   Book(this.id, this.title, this.genre, this.tags, this.at, this.price);
   final int id;
@@ -73,12 +73,12 @@ class Book {
       expect(out, contains(flat('types: <NamedType>[_tBook]')));
     });
 
-    test('@GraphQLType(name:, description:)', () async {
+    test('@GraphQL(name:, description:)', () async {
       String out = flat(
         await _build('''
 $_hello
 /// Not this.
-@GraphQLType(name: 'Article', description: 'An article.')
+@GraphQL(name: 'Article', description: 'An article.')
 class Post {
   final int id = 1;
 }
@@ -99,7 +99,7 @@ class Post {
     test('@GraphQLIgnore leaves a field out', () async {
       String out = await _build('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post {
   final int id = 1;
   @GraphQLIgnore()
@@ -113,7 +113,7 @@ class Post {
       String out = flat(
         await _build('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post {
   final String body = '';
 
@@ -161,7 +161,7 @@ class Base<T> {
   String get shout => name;
 }
 
-@GraphQLType()
+@GraphQL()
 class Item extends Base<int> {
   Item(super.value, super.name, this.extra);
   final bool extra;
@@ -224,13 +224,13 @@ class R {
       String out = flat(
         await _build('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class User {
   final String name = '';
   final List<Post> posts = <Post>[];
 }
 
-@GraphQLType()
+@GraphQL()
 class Post {
   final User? author = null;
 }
@@ -245,17 +245,17 @@ class Post {
     test('a resolver that gives a type that can refuse is nullable', () async {
       String out = flat(
         await _build('''
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 class Secret {
   final String name = '';
 }
 
-@GraphQLType()
+@GraphQL()
 class Open {
   final String name = '';
 }
 
-@GraphQLType()
+@GraphQL()
 class Page {
   final String title = '';
 }
@@ -310,7 +310,7 @@ class R {
   List<String> names() => <String>[];
 }
 
-@GraphQLType()
+@GraphQL()
 class Page {
   final String title = '';
   final String plain = '';
@@ -335,17 +335,17 @@ class Page {
       String out = flat(
         await _build('''
 $_hello
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 class Secret {
   final String name = '';
 }
 
-@GraphQLType()
+@GraphQL()
 class Open {
   final String name = '';
 }
 
-@GraphQLType()
+@GraphQL()
 class Page {
   final Secret secret = Secret();
   final List<Secret> secrets = <Secret>[];
@@ -579,7 +579,7 @@ class PostResolver {
         String out = flat(
           await _build('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post {
   final int authorId = 1;
 }
@@ -628,7 +628,7 @@ class PostResolver {
     test('a field type GraphQL can not show', () async {
       await expectError('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post {
   final Map<String, int> meta = <String, int>{};
 }
@@ -644,7 +644,7 @@ class R {
 ''', 'R.hello: the type void can not be a GraphQL field.');
     });
 
-    test('a class that is not a @GraphQLType', () async {
+    test('a class that is not a @GraphQL', () async {
       await expectError('''
 class Thing {}
 class R {
@@ -656,7 +656,7 @@ class R {
 
     test('an argument type GraphQL can not read', () async {
       await expectError('''
-@GraphQLType()
+@GraphQL()
 class Post { final int id = 1; }
 class R {
   @GraphQLQuery()
@@ -730,7 +730,7 @@ class R {
     test('@GraphQLField on a method', () async {
       await expectError('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post {
   @GraphQLField()
   String excerpt(int size) => '';
@@ -754,9 +754,9 @@ class R {
     test('two types with one name', () async {
       await expectError('''
 $_hello
-@GraphQLType(name: 'Post')
+@GraphQL(name: 'Post')
 class A { final int id = 1; }
-@GraphQLType(name: 'Post')
+@GraphQL(name: 'Post')
 class B { final int id = 1; }
 ''', 'the GraphQL type name "Post" is used twice');
     });
@@ -775,7 +775,7 @@ class R {
     test('a field made twice on a type', () async {
       await expectError('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class Post { final int id = 1; }
 class R {
   @GraphQLResolveField()
@@ -796,7 +796,7 @@ class In {
   In({required this.name});
   final String name;
 }
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: In)
 class Post { final int id = 1; }
 ''',
@@ -807,19 +807,19 @@ class Post { final int id = 1; }
       );
     });
 
-    test('a private @GraphQLType class', () async {
+    test('a private @GraphQL class', () async {
       await expectError('''
 $_hello
-@GraphQLType()
+@GraphQL()
 class _Hidden { final int id = 1; }
-''', '_Hidden: a @GraphQLType class can not be private');
+''', '_Hidden: a @GraphQL class can not be private');
     });
 
     test('a private enum as a field type', () async {
       await expectError('''
 $_hello
 enum _Priv { a, b }
-@GraphQLType()
+@GraphQL()
 class Post { final _Priv kind = _Priv.a; }
 ''', '_Priv: a private enum can not be a GraphQL type');
     });
@@ -827,7 +827,7 @@ class Post { final _Priv kind = _Priv.a; }
     test('a schema with types but no query gets the placeholder', () async {
       String out = flat(
         await _build('''
-@GraphQLType()
+@GraphQL()
 class Post { final int id = 1; }
 '''),
       );
@@ -880,7 +880,7 @@ class R {
     test('guard: on queries, mutations and @GraphQLResolveField', () async {
       String out = flat(
         await _build('''
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 class Book {
   final int id = 1;
 }

@@ -9,7 +9,7 @@ part 'user.model.g.dart';
 
 /// Every field that gives a User needs a login, also `post.user`.
 @DoxModel(table: 'users')
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 @GraphQLAll()
 @GraphQLPaginate()
 @GraphQLFind()

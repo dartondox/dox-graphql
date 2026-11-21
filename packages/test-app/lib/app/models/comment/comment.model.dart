@@ -7,7 +7,7 @@ part 'comment.model.g.dart';
 
 /// No operation annotation: only reachable through `post.comments`.
 @DoxModel(table: 'comments')
-@GraphQLType()
+@GraphQL()
 class Comment extends CommentGenerator {
   @Column()
   String? body;

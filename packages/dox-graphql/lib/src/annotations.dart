@@ -6,8 +6,9 @@
 ///
 /// ```dart
 /// @DoxModel(table: 'posts')
-/// @GraphQLType(filter: Ability.view)
+/// @GraphQL(filter: Ability.view)
 /// @GraphQLAll(can: Ability.viewAny)
+/// @GraphQLPaginate(can: Ability.viewAny)
 /// @GraphQLFind(can: Ability.view)
 /// @GraphQLCreate(dto: PostInput, can: Ability.create, guard: true, owner: 'userId')
 /// @GraphQLUpdate(dto: PostInput, can: Ability.update, guard: true)
@@ -15,16 +16,21 @@
 /// class Post extends PostGenerator {}
 /// ```
 ///
-/// `can:` is an ability of the policy of the model (or of
-/// `Gate.define`). The generated resolver asks `Gate.allows` before it
-/// gives or writes data. A denied guest gets "Unauthenticated", a denied
-/// user "Forbidden". With no `can:`, nothing is asked.
+/// `can:` is an ability of the policy of the model. The generated
+/// resolver asks `Gate.allows` before it gives or writes data. A denied
+/// guest gets "Unauthenticated", a denied user "Forbidden". With no
+/// `can:`, nothing is asked. An ability of `Gate.define` counts only for a
+/// model with no registered policy.
+///
+/// `filter:` on `@GraphQL` hides the rows that its ability denies,
+/// everywhere the type appears.
 ///
 /// `guard: true` needs a logged-in user. The default is public.
 ///
 /// When the app starts, every `can:` and `filter:` is checked: an
-/// ability that the policy of the model does not have (a typo) stops the
-/// start with an error.
+/// ability that the registered policy of the model does not have (a
+/// typo) stops the start with an error. Register the policies in the
+/// `setup()` of a provider.
 library;
 
 /// Makes a GraphQL object type from a class.
@@ -33,13 +39,8 @@ library;
 /// fields. On a plain Dart class, the public fields become fields. The
 /// type gets no query by itself: add `@GraphQLAll`, `@GraphQLFind` and
 /// the other operation annotations to a model.
-class GraphQLType {
-  const GraphQLType({
-    this.name,
-    this.description,
-    this.guard = false,
-    this.filter,
-  });
+class GraphQL {
+  const GraphQL({this.name, this.description, this.guard = false, this.filter});
 
   /// The type name. Default: the class name.
   final String? name;
@@ -53,16 +54,19 @@ class GraphQLType {
   /// interface or union field that picks this type for its value.
   final bool guard;
 
-  /// Models only: an ability, like `Ability.view`. The lists
-  /// (`@GraphQLAll`, `@GraphQLPaginate`) and the relations to this model
-  /// leave out each row that `Gate.allows(user, filter, row)` denies, with
-  /// no error. A single relation gives null. So a list can have fewer
-  /// rows than its limit. `@GraphQLFind` gives null for a denied row, the
-  /// same answer as for a missing id.
+  /// Models only: an ability, like `Ability.view`. It hides the rows that
+  /// `Gate.allows(user, filter, row)` denies everywhere the type appears:
+  /// the lists (`@GraphQLAll`, `@GraphQLPaginate`), `@GraphQLFind`, the
+  /// relations, the rows that `@GraphQLCreate` and `@GraphQLUpdate` give
+  /// back, `@GraphQLField` getters, fields of plain classes, and the
+  /// results of `@GraphQLQuery`, `@GraphQLMutation` and
+  /// `@GraphQLResolveField`. A denied row is null (the same answer as a
+  /// missing id), and a list leaves it out with no error, so a list can
+  /// have fewer rows than its limit.
   ///
-  /// It does not change the writes: `@GraphQLUpdate` and `@GraphQLDelete`
-  /// ask only their `can:`. A `@GraphQLQuery` or `@GraphQLResolveField`
-  /// that gives the model does not filter: call `Gate` in it.
+  /// It does not stop a write: `@GraphQLUpdate` and `@GraphQLDelete` ask
+  /// only their `can:`. An interface or union field that picks this type
+  /// for its value is not filtered: call `Gate` in its resolver.
   final String? filter;
 }
 
@@ -76,7 +80,8 @@ class GraphQLAll {
   final String? description;
 
   /// The ability to ask on the model type, like `Ability.viewAny`, before
-  /// the query runs.
+  /// the query runs. It gets no row, so it must take only the user: a row
+  /// ability like `view` does not fit here.
   final String? can;
 
   /// True: the query needs a logged-in user.
@@ -102,7 +107,8 @@ class GraphQLPaginate {
   final String? description;
 
   /// The ability to ask on the model type, like `Ability.viewAny`, before
-  /// the query runs.
+  /// the query runs. It gets no row, so it must take only the user: a row
+  /// ability like `view` does not fit here.
   final String? can;
 
   /// True: the query needs a logged-in user.
@@ -152,7 +158,8 @@ class GraphQLCreate {
   final String? description;
 
   /// The ability to ask on the model type, like `Ability.create`, before
-  /// the input is read.
+  /// the input is read. It gets no row, so it must take only the user: a
+  /// row ability like `update` does not fit here.
   final String? can;
 
   /// True: the mutation needs a logged-in user.

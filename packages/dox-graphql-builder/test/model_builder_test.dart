@@ -26,7 +26,7 @@ $code
 
 const String _user = '''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 class User extends Model<User> {
   @Column()
   String? name;
@@ -61,7 +61,7 @@ void main() {
         await _build('''
 $_user
 @DoxModel(table: 'posts')
-@GraphQLType()
+@GraphQL()
 class Post extends Model<Post> {
   @Column()
   String? title;
@@ -143,7 +143,7 @@ class Post extends Model<Post> {
         await _build('''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 @GraphQLPaginate()
 @GraphQLCreate(dto: CreatePostDto)
@@ -166,7 +166,7 @@ class Post extends Model<Post> {
       String out = await _build('''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 class Comment extends Model<Comment> {
   @Column()
   String? body;
@@ -185,7 +185,7 @@ class Comment extends Model<Comment> {
       String out = flat(
         await _build('''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 @GraphQLFind()
 class User extends Model<User> {}
@@ -225,7 +225,7 @@ class User extends Model<User> {}
       String out = flat(
         await _build('''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 @GraphQLAll(name: 'people', description: 'Everyone.')
 @GraphQLPaginate(name: 'pagedPeople')
 class User extends Model<User> {}
@@ -252,7 +252,7 @@ class User extends Model<User> {}
       String out = flat(
         await _build('''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 @GraphQLPaginate()
 class User extends Model<User> {}
 '''),
@@ -291,15 +291,15 @@ class User extends Model<User> {}
     test('plural names', () async {
       String out = await _build('''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 class Category extends Model<Category> {}
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 class Box extends Model<Box> {}
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 class Day extends Model<Day> {}
 ''');
@@ -312,7 +312,7 @@ class Day extends Model<Day> {}
       String out = flat(
         await _build('''
 @DoxModel(primaryKey: 'uid', primaryKeyType: String)
-@GraphQLType()
+@GraphQL()
 @GraphQLFind()
 class Doc extends Model<Doc> {}
 '''),
@@ -334,7 +334,7 @@ class Doc extends Model<Doc> {}
         await _build('''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto)
 @GraphQLDelete()
 class Post extends Model<Post> {
@@ -371,7 +371,7 @@ class Post extends Model<Post> {
         await _build('''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto, can: 'create')
 @GraphQLUpdate(dto: CreatePostDto, can: 'update')
 @GraphQLDelete(can: 'delete')
@@ -480,9 +480,8 @@ class Post extends Model<Post> {
           ),
         ),
       );
-      // a database error on the blank row is not turned into FORBIDDEN
-      expect(out, contains(flat('} on TypeError { allowed = false; }')));
-      expect(out, isNot(contains('catch (_)')));
+      // any error of the policy on the blank row denies
+      expect(out, contains(flat('} on Object { allowed = false; }')));
       // nothing is asked at run time to skip a check
       expect(out, isNot(contains('hasAbility')));
     });
@@ -493,7 +492,7 @@ class Post extends Model<Post> {
           '''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto)
 @GraphQLUpdate(dto: EditPostDto)
 class Post extends Model<Post> {
@@ -524,7 +523,7 @@ class EditPostDto {
         await _build('''
 $_user
 @DoxModel()
-@GraphQLType(filter: 'view')
+@GraphQL(filter: 'view')
 @GraphQLAll(can: 'viewAny')
 @GraphQLPaginate(can: 'viewAny')
 @GraphQLFind(can: 'view')
@@ -534,7 +533,7 @@ class Post extends Model<Post> {
 }
 
 @DoxModel(table: 'blogs')
-@GraphQLType()
+@GraphQL()
 class Blog extends Model<Blog> {
   @HasMany(Post)
   List<Post> posts = <Post>[];
@@ -602,7 +601,7 @@ class Blog extends Model<Blog> {
         out,
         contains(
           flat(
-            '_checkAbility<i1.Post>(\'@GraphQLType(filter: \\\'view\\\')\', '
+            '_checkAbility<i1.Post>(\'@GraphQL(filter: \\\'view\\\')\', '
             "'Post', 'view');",
           ),
         ),
@@ -623,28 +622,28 @@ class Blog extends Model<Blog> {
       String out = flat(
         await _build('''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 class User extends Model<User> {
   @Column()
   String? name;
 }
 
 @DoxModel()
-@GraphQLType(filter: 'view')
+@GraphQL(filter: 'view')
 class Post extends Model<Post> {
   @Column()
   String? title;
 }
 
 @DoxModel(table: 'comments')
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 class Comment extends Model<Comment> {
   @Column()
   String? body;
 }
 
 @DoxModel(table: 'blogs')
-@GraphQLType()
+@GraphQL()
 class Blog extends Model<Blog> {
   @HasMany(Post)
   List<Post> posts = <Post>[];
@@ -676,7 +675,7 @@ class Blog extends Model<Blog> {
         await _build('''
 $_user
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 class Member extends Model<Member> {
   @HasOne(User)
   User? mainUser;
@@ -703,12 +702,12 @@ class Member extends Model<Member> {
       expect(out, contains(message));
     }
 
-    test('a relation to a model with no @GraphQLType', () async {
+    test('a relation to a model with no @GraphQL', () async {
       await expectError('''
 @DoxModel()
 class Tag extends Model<Tag> {}
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 class Post extends Model<Post> {
   @HasMany(Tag)
   List<Tag> tags = <Tag>[];
@@ -719,7 +718,7 @@ class Post extends Model<Post> {
     test('a column type GraphQL can not show', () async {
       await expectError('''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 class Post extends Model<Post> {
   @Column()
   Map<String, dynamic>? meta;
@@ -731,7 +730,7 @@ class Post extends Model<Post> {
       await expectError(
         '''
 @DoxModel(table: 'users')
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 class User extends Model<User> {}
 class R {
@@ -748,7 +747,7 @@ class R {
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto)
 class Post extends Model<Post> {
   @Column()
@@ -764,7 +763,7 @@ class Post extends Model<Post> {
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto)
 class Post extends Model<Post> {
   @Column()
@@ -786,7 +785,7 @@ class Post extends Model<Post> {
       await expectError('''
 class NotADto {}
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLUpdate(dto: NotADto)
 class Post extends Model<Post> {}
 ''', 'Post @GraphQLUpdate: `dto:` must be a class with @Dto(), not NotADto.');
@@ -796,7 +795,7 @@ class Post extends Model<Post> {}
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto, owner: 'authorId')
 class Post extends Model<Post> {
   @Column()
@@ -813,7 +812,7 @@ class Post extends Model<Post> {
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto, owner: 'userId')
 class Post extends Model<Post> {
   @Column()
@@ -836,7 +835,7 @@ class Post extends Model<Post> {
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: TitleDto, owner: 'userId')
 @GraphQLUpdate(dto: CreatePostDto)
 class Post extends Model<Post> {
@@ -866,7 +865,7 @@ class TitleDto {
 
     test('an operation on a plain class', () async {
       await expectError('''
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 class Plain {
   String? name;
@@ -876,25 +875,25 @@ class Plain {
 
     test('filter: on a plain class', () async {
       await expectError('''
-@GraphQLType(filter: 'view')
+@GraphQL(filter: 'view')
 class Plain {
   String? name;
 }
 ''', 'Plain: `filter:` works only on a model of dox_orm.');
     });
 
-    test('an operation without @GraphQLType', () async {
+    test('an operation without @GraphQL', () async {
       await expectError('''
 @DoxModel()
 @GraphQLFind()
 class Post extends Model<Post> {}
-''', 'Post: @GraphQLFind() needs @GraphQLType() on the model too.');
+''', 'Post: @GraphQLFind() needs @GraphQL() on the model too.');
     });
 
     test('an empty can:', () async {
       await expectError('''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLFind(can: '')
 class Post extends Model<Post> {}
 ''', 'Post @GraphQLFind: `can:` can not be empty.');
@@ -904,7 +903,7 @@ class Post extends Model<Post> {}
       await expectError(
         '''
 @DoxModel()
-@GraphQLType()
+@GraphQL()
 @GraphQLCreate(dto: CreatePostDto, owner: 'at')
 class Post extends Model<Post> {
   @Column()
@@ -922,7 +921,7 @@ class Post extends Model<Post> {
           '''
 $_user
 @DoxModel(table: 'posts')
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 @GraphQLCreate(dto: TitleDto, owner: 'userId')
 @GraphQLUpdate(dto: TitleDto, can: 'update')
@@ -959,11 +958,125 @@ class TitleDto {
       expect(out, isNot(matches(RegExp("\\('posts',[^,]*,guard:"))));
     });
 
+    test('update or delete with no can: and no guard: warns', () async {
+      await _build('''
+@DoxModel(table: 'posts')
+@GraphQL()
+@GraphQLUpdate(dto: CreatePostDto)
+@GraphQLDelete(can: 'delete')
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+
+@DoxModel(table: 'notes')
+@GraphQL(guard: true)
+@GraphQLDelete()
+class Note extends Model<Note> {}
+
+@DoxModel(table: 'tags')
+@GraphQL()
+@GraphQLDelete(name: 'dropTag', guard: true)
+class Tag extends Model<Tag> {}
+''', dto: _titleDto);
+      expect(warnings, hasLength(1));
+      expect(
+        warnings.single,
+        endsWith(
+          'updatePost (@GraphQLUpdate on Post) has no can: and no guard: - '
+          'anyone can call it.',
+        ),
+      );
+    });
+
+    test('filter: runs on every field that gives the model', () async {
+      String out = flat(
+        await _build('''
+@DoxModel(table: 'posts')
+@GraphQL(filter: 'view')
+@GraphQLCreate(dto: CreatePostDto)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+
+@DoxModel(table: 'blogs')
+@GraphQL()
+class Blog extends Model<Blog> {
+  @GraphQLField()
+  Post get pinned => Post();
+}
+
+@GraphQL()
+class Box {
+  final List<Post> posts = <Post>[];
+}
+
+class R {
+  @GraphQLQuery()
+  Future<List<Post>> latest() async => <Post>[];
+  @GraphQLResolveField()
+  Post first(Box box) => Post();
+}
+''', dto: _titleDto),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "'pinned', _tPost, resolve: (i1.Blog s, "
+            'ResolveInfo<DoxGraphQLContext> info) => '
+            "_filterOne<i1.Post>(info, 'view', Future<i1.Post?>.value(s.pinned))",
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "'posts', _tPost.nonNull.list.nonNull, resolve: (i1.Box s, "
+            'ResolveInfo<DoxGraphQLContext> info) => '
+            "_filterList<i1.Post>(info, 'view', "
+            'Future<List<i1.Post>?>.value(s.posts))',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "_filterList<i1.Post>(info, 'view', "
+            'Future<List<i1.Post>?>.value(i1.R().latest()))',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "'first', _tPost, resolve: (i1.Box s, "
+            'ResolveInfo<DoxGraphQLContext> info) => '
+            "_filterOne<i1.Post>(info, 'view', "
+            'Future<i1.Post?>.value(i1.R().first(s)))',
+          ),
+        ),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "_filterOne<i1.Post>(info, 'view', "
+            'Future<i1.Post?>.value(_createPost(info)))',
+          ),
+        ),
+      );
+    });
+
     test('the guard of the type reaches the page and the delete', () async {
       String out = flat(
         await _build('''
 @DoxModel(table: 'posts')
-@GraphQLType(guard: true, filter: 'view')
+@GraphQL(guard: true, filter: 'view')
 @GraphQLPaginate()
 @GraphQLFind()
 @GraphQLDelete()
@@ -1001,7 +1114,7 @@ class Post extends Model<Post> {
         await _build('''
 $_user
 @DoxModel(table: 'posts')
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 @GraphQLAll(guard: true)
 @GraphQLPaginate(guard: true)
 @GraphQLFind(guard: true)

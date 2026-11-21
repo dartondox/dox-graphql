@@ -4,6 +4,7 @@ import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:build/build.dart' show log;
 import 'package:dox_builder/dox_builder.dart';
 import 'package:source_gen/source_gen.dart';
 
@@ -143,27 +144,27 @@ class SchemaReader {
   ];
 
   /// Stops the build when [element] has an operation annotation but no
-  /// `@GraphQLType`.
+  /// `@GraphQL`.
   static void checkOperations(ClassElement element) {
-    if (annotation(element, 'GraphQLType') != null) return;
+    if (annotation(element, 'GraphQL') != null) return;
     for (String kind in operations) {
       if (annotation(element, kind) == null) continue;
       _fail(
         element.displayName,
-        '@$kind() needs @GraphQLType() on the model too.',
+        '@$kind() needs @GraphQL() on the model too.',
         element,
       );
     }
   }
 
-  /// Step 1: register a `@GraphQLType` class, so fields can point at it.
+  /// Step 1: register a `@GraphQL` class, so fields can point at it.
   void addType(ClassElement element) {
-    DartObject type = annotation(element, 'GraphQLType')!;
+    DartObject type = annotation(element, 'GraphQL')!;
     String where = element.displayName;
     if (element.isPrivate) {
       _fail(
         where,
-        'a @GraphQLType class can not be private: schema.g.dart is another '
+        'a @GraphQL class can not be private: schema.g.dart is another '
         'library. Remove the `_`.',
         element,
       );
@@ -172,7 +173,7 @@ class SchemaReader {
     _checkName(name, where, element);
     _claimTypeName(name, where, element);
     if (element.typeParameters.isNotEmpty) {
-      _fail(where, 'a @GraphQLType class can not be generic.', element);
+      _fail(where, 'a @GraphQL class can not be generic.', element);
     }
     DartObject? model = annotation(
       element,
@@ -485,7 +486,7 @@ class SchemaReader {
     ArgSpec idArg = ArgSpec('id', 'graphqlId.nonNull');
     String? filter = spec.filter;
     if (filter != null) {
-      _checkAbility(spec, "@GraphQLType(filter: '$filter')", filter);
+      _checkAbility(spec, "@GraphQL(filter: '$filter')", filter);
     }
     for (OperationSpec? op in <OperationSpec?>[
       spec.all,
@@ -599,6 +600,16 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
       );
     }
 
+    for (OperationSpec? op in <OperationSpec?>[spec.update, spec.delete]) {
+      if (op == null || op.can != null || op.guard || spec.guard) continue;
+      String field =
+          op.name ??
+          '${op.annotation == 'GraphQLUpdate' ? 'update' : 'delete'}$name';
+      log.warning(
+        '$field (@${op.annotation} on ${element.displayName}) has no can: and '
+        'no guard: - anyone can call it.',
+      );
+    }
     OperationSpec? create = spec.create;
     if (create != null) _addCreate(spec, create, model);
     OperationSpec? update = spec.update;
@@ -684,7 +695,7 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allow
         type: '${spec.variable}.nonNull',
         description: op.description,
         args: <ArgSpec>[ArgSpec('input', '${input.variable}.nonNull')],
-        resolve: '_create$name(info)',
+        resolve: _filtered(element.thisType, '_create$name(info)'),
         where: '@GraphQLCreate on ${element.displayName}',
         // the owner is the logged-in user, so there must be one
         guard: op.guard || owner != null,
@@ -749,7 +760,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         type: spec.variable,
         description: op.description,
         args: <ArgSpec>[idArg, ArgSpec('input', '${input.variable}.nonNull')],
-        resolve: '_update$name(info)',
+        resolve: _filtered(element.thisType, '_update$name(info)'),
         where: '@GraphQLUpdate on ${element.displayName}',
         guard: op.guard,
       ),
@@ -912,7 +923,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       FieldSpec(
         name: name,
         type: gql,
-        resolve: resolve ?? 's.$dartName',
+        resolve: resolve ?? _filtered(type, 's.$dartName'),
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
@@ -926,15 +937,46 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
 
   /// True when a field can be refused at run time, so it must be nullable:
   /// it has `guard: true`, or it gives a registered type with
-  /// `guard: true`. Like `GraphQLAuth.needsLogin`.
+  /// `guard: true` (like `GraphQLAuth.needsLogin`), or it gives one row of
+  /// a model with `filter:` (a denied row is null).
   bool _mayRefuse(DartType type, bool fieldGuard) {
     if (fieldGuard) return true;
     DartType related = _unwrapFuture(type);
-    if (related is InterfaceType && related.isDartCoreList) {
+    bool list = related is InterfaceType && related.isDartCoreList;
+    if (related is InterfaceType && list) {
       related = related.typeArguments.first;
     }
     Element? element = related is InterfaceType ? related.element : null;
-    return objects[element]?.guard ?? false;
+    ObjectSpec? target = objects[element];
+    if (target == null) return false;
+    return target.guard || (!list && target.filter != null);
+  }
+
+  /// [resolve] (code of a value of Dart type [type], or a Future of it)
+  /// with the `filter:` of the model it gives, when it has one: a denied
+  /// row is null, and a list drops the denied rows. The `filter:` is a rule
+  /// of the type, so every field that gives the model runs it.
+  String _filtered(DartType type, String resolve) {
+    DartType value = _unwrapFuture(type);
+    bool list = value is InterfaceType && value.isDartCoreList;
+    DartType item = value is InterfaceType && list
+        ? value.typeArguments.first
+        : value;
+    Element? element = item is InterfaceType ? item.element : null;
+    String? filter = objects[element]?.filter;
+    if (filter == null) return resolve;
+    // ponytail: a list with nullable items is not filtered; a model list
+    // field has non-null items.
+    if (list && item.nullabilitySuffix == NullabilitySuffix.question) {
+      return resolve;
+    }
+    usesGate = true;
+    String model = imports.nonNullCode(item);
+    String ability = literal(filter);
+    return list
+        ? '_filterList<$model>(info, $ability, '
+              'Future<List<$model>?>.value($resolve))'
+        : '_filterOne<$model>(info, $ability, Future<$model?>.value($resolve))';
   }
 
   // ---------------------------------------------------------------------
@@ -1036,7 +1078,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         _fail(
           where,
           'the first parameter of a @GraphQLResolveField() method must be the '
-          'parent: a non-null @GraphQLType class, like `Post post`.',
+          'parent: a non-null @GraphQL class, like `Post post`.',
           method,
         );
       }
@@ -1083,7 +1125,10 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
     FieldSpec field = FieldSpec(
       name: name,
       type: type,
-      resolve: '$instance.${method.displayName}(${values.join(', ')})',
+      resolve: _filtered(
+        returnType,
+        '$instance.${method.displayName}(${values.join(', ')})',
+      ),
       where: where,
       description: _string(ann, 'description') ?? docOf(method),
       deprecationReason: _string(ann, 'deprecationReason'),
@@ -1174,7 +1219,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
     _fail(
       where,
       'the type ${type.getDisplayString()} can not be a GraphQL field. Use '
-      'String, int, double, bool, DateTime, an enum, a @GraphQLType class '
+      'String, int, double, bool, DateTime, an enum, a @GraphQL class '
       'or a List of them. Or add @GraphQLIgnore().',
       element,
     );
@@ -1415,7 +1460,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       _fail(
         where,
         'the GraphQL type name "$name" is used twice: here and by $other. '
-        'Rename one, like @GraphQLType(name: \'Other\').',
+        'Rename one, like @GraphQL(name: \'Other\').',
         element,
       );
     }

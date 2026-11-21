@@ -13,14 +13,20 @@
     is asked as a blank row. A denied guest gets `UNAUTHENTICATED`, and
     a denied user gets `FORBIDDEN`. With no `can:`, the resolver asks
     nothing.
+    Any error of the policy on the blank row of a missing id is a deny,
+    so a missing id gets the same answer as a denied id.
   - `owner:` is on `@GraphQLCreate`. The create sets that column to the
     id of the logged-in user, so it needs a login. Update never changes
     it. `GraphQLAuth.ownerId` reads the id.
-  - `@GraphQLType(filter: ability)`: the lists and the relations to the
+  - `@GraphQL(filter: ability)`: the lists and the relations to the
     model drop the rows that the ability denies. A single relation gives
-    null. `@GraphQLFind` gives null for a denied row, like for a missing
-    id. The filter does not change update and delete: they ask only
-    their `can:`. Your own resolvers do not filter.
+    null. It hides denied rows everywhere the type appears: the lists,
+    `@GraphQLFind`, relations, the rows that create and update give back,
+    `@GraphQLField` getters, fields of plain classes, and the results of
+    `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField`. A
+    denied row is null, like a missing id, and a list drops it. The
+    filter does not stop update and delete: they ask only their `can:`.
+    An interface or union field that picks the type is not filtered.
   - A type with `guard: true` also guards its `<Model>Paginator` and its
     `@GraphQLDelete` (a Boolean field), so a guest gets
     `UNAUTHENTICATED` before any query runs.
@@ -29,9 +35,10 @@
   `count`, `currentPage`, `firstItem`, `lastItem`, `hasMorePages`,
   `lastPage`, `perPage` and `total`. A `first` above 100 is an error.
   When the model also has `@GraphQLAll`, the name is `postsPaginate`.
-  With `filter:`, `total` and `lastPage` also count the rows that the
-  filter drops, because the count query runs first.
-- `guard: true` needs a logged-in user. It is on `@GraphQLType`,
+  With `filter:`, `total`, `lastPage`, `firstItem` and `lastItem` also
+  count the rows that the filter drops, because the queries run first.
+  `count` is the number of rows in `data`.
+- `guard: true` needs a logged-in user. It is on `@GraphQL`,
   `@GraphQLField`, `@GraphQLQuery`, `@GraphQLMutation`,
   `@GraphQLResolveField`, the operation annotations, `Field` and
   `ObjectType`. The default is public, also with the auth middleware in
@@ -49,6 +56,8 @@
   `@GraphQLFind(can: 'veiw') on Post: PostPolicy has no ability 'veiw'.
   Available: viewAny, view, create, update, delete.` This needs the
   dox_auth version with `Gate.policyOf` and `Gate.isDefined`.
+- `@GraphQLType` is now `@GraphQL`, with the same options: `name`,
+  `description`, `guard` and `filter`.
 - `@ResolveField` is now `@GraphQLResolveField`.
 - `AutoField` and `GraphQLConfig(autoResolvers:)` are gone. The builder
   makes no field by default, so there is nothing to turn off.
@@ -120,11 +129,10 @@
 - `GraphQLRequest.extensions`.
 - The engine limit defaults are constants:
   `GraphQLExecutor.defaultMaxDepth` and the others.
-- Annotations for `dox_graphql_builder`: `@GraphQLType`, `@GraphQLField`,
+- Annotations for `dox_graphql_builder`: `@GraphQL`, `@GraphQLField`,
   `@GraphQLIgnore`, `@GraphQLQuery`, `@GraphQLMutation` and
   `@GraphQLResolveField`.
-- The base class of all types is now `GraphQLTypeRef`, so the name
-  `GraphQLType` is free for the annotation.
+- The base class of all types is `GraphQLTypeRef`.
 - `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text in UTC. Input with no
   offset is read as UTC.
 - `GraphQLDto.validate` runs the rules of a `@Dto` on mutation input. A

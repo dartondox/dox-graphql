@@ -54,9 +54,9 @@ class GraphQLInstallCommand extends Command {
     await installer.buildRunner();
     installer.printSummary(<String>[
       if (orm) ...<String>[
-        'Add `@GraphQLType()` to a model, and one annotation per query or '
+        'Add `@GraphQL()` to a model, and one annotation per query or '
             'mutation, like `@GraphQLAll(can: Ability.viewAny)` and '
-            '`@GraphQLFind(can: Ability.view)`. Add `@GraphQLType()` to the '
+            '`@GraphQLFind(can: Ability.view)`. Add `@GraphQL()` to the '
             'models it relates to as well.',
         'Run `dart run build_runner build`.',
       ] else ...<String>[
@@ -77,7 +77,7 @@ import 'package:$app/generated/schema.g.dart';
 /// GraphQL settings
 /// -------------------------------
 /// `schema`: made by `dart run build_runner build` from your
-/// `@GraphQLType`, `@GraphQLAll`, `@GraphQLFind`, `@GraphQLQuery`, ...
+/// `@GraphQL`, `@GraphQLAll`, `@GraphQLFind`, `@GraphQLQuery`, ...
 /// annotations.
 /// `path`: the URL of the endpoint, `/graphql` by default.
 /// `middleware`: run before the requests, for example an auth middleware.

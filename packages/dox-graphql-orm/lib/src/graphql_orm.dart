@@ -49,14 +49,22 @@ class GraphQLOrm {
         .paginate(currentPage: page, perPage: first);
   }
 
+  /// [page] with only the rows [kept] (of `filter:`). The page keeps the
+  /// number of its rows before the filter, for `firstItem` and
+  /// `lastItem`.
+  static Pagination<T> filteredPage<T>(Pagination<T> page, List<T> kept) {
+    return _FilteredPage<T>(page, kept);
+  }
+
   /// The `PaginatorInfo` type of every paged list query: the numbers of
-  /// the page. `count` is the number of rows on this page. `firstItem`
-  /// and `lastItem` are the numbers of its first and last row (from 1),
-  /// null on an empty page.
+  /// the page. `count` is the number of rows in `data`. `firstItem` and
+  /// `lastItem` are the numbers of the first and last row of the page
+  /// (from 1), null on an empty page.
   ///
   /// With `filter:` on the model, the rows that the filter drops are
-  /// left out of `data` and `count`, but `total` and `lastPage` still
-  /// count them: the count query runs before the filter.
+  /// left out of `data` and `count`. `total`, `lastPage`, `firstItem` and
+  /// `lastItem` still count them: the queries run before the filter, so
+  /// these numbers agree with each other.
   static final ObjectType<Pagination<Object?>, DoxGraphQLContext>
   paginatorInfo = ObjectType<Pagination<Object?>, DoxGraphQLContext>(
     'PaginatorInfo',
@@ -88,10 +96,14 @@ class GraphQLOrm {
 
   static int _count(Pagination<Object?> p) => p.data.length;
   static int _currentPage(Pagination<Object?> p) => p.currentPage;
+
+  /// The rows of the page before the filter.
+  static int _rows(Pagination<Object?> p) =>
+      p is _FilteredPage<Object?> ? p.rows : p.data.length;
   static int? _firstItem(Pagination<Object?> p) =>
-      p.data.isEmpty ? null : (p.currentPage - 1) * p.perPage + 1;
+      _rows(p) == 0 ? null : (p.currentPage - 1) * p.perPage + 1;
   static int? _lastItem(Pagination<Object?> p) =>
-      p.data.isEmpty ? null : (p.currentPage - 1) * p.perPage + p.data.length;
+      _rows(p) == 0 ? null : (p.currentPage - 1) * p.perPage + _rows(p);
   static bool _hasMorePages(Pagination<Object?> p) =>
       p.currentPage < p.lastPage;
   static int _lastPage(Pagination<Object?> p) => p.lastPage;
@@ -222,4 +234,20 @@ class GraphQLOrm {
     ]) as Future<Object?>);
     return <bool?>[for (P _ in parents) true];
   }
+}
+
+/// A page after `filter:`: [data] has only the allowed rows, [rows] is
+/// the number of rows before the filter.
+class _FilteredPage<T> extends Pagination<T> {
+  _FilteredPage(Pagination<T> page, List<T> kept)
+    : rows = page.data.length,
+      super(
+        total: page.total,
+        perPage: page.perPage,
+        lastPage: page.lastPage,
+        currentPage: page.currentPage,
+        data: kept,
+      );
+
+  final int rows;
 }

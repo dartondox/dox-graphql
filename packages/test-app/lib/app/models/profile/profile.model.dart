@@ -4,7 +4,7 @@ import 'package:dox_orm/dox_orm.dart';
 part 'profile.model.g.dart';
 
 @DoxModel(table: 'profiles')
-@GraphQLType()
+@GraphQL()
 class Profile extends ProfileGenerator {
   @Column()
   String? bio;

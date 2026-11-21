@@ -9,7 +9,7 @@ part 'member.model.g.dart';
 
 /// `hidden` leaves out a column and a relation.
 @DoxModel(table: 'members')
-@GraphQLType(guard: true)
+@GraphQL(guard: true)
 @GraphQLAll()
 @GraphQLFind()
 @GraphQLCreate(dto: MemberDto)

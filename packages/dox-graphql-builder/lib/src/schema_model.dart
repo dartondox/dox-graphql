@@ -56,7 +56,7 @@ class FieldSpec {
   final String? column;
 }
 
-/// One `@GraphQLType` class.
+/// One `@GraphQL` class.
 class ObjectSpec {
   ObjectSpec(this.element, this.name, this.library, {this.description});
 

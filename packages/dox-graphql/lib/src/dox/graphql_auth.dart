@@ -11,7 +11,7 @@ import 'graphql_context.dart';
 /// The login check of each GraphQL field.
 ///
 /// A field needs a logged-in user when it has `guard: true`, or when it
-/// gives a type with `guard: true` (like `@GraphQLType(guard: true)`).
+/// gives a type with `guard: true` (like `@GraphQL(guard: true)`).
 /// The type also covers relations and custom resolvers that give it,
 /// and an interface or union field that picks it for its value. Every
 /// other field is public.

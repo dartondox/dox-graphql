@@ -11,7 +11,7 @@ part 'note.model.g.dart';
 /// paged list is `notes`. A note with the title `hidden` is left out of
 /// every read (`filter:`), also of the find with no `can:`.
 @DoxModel(table: 'notes')
-@GraphQLType(filter: Ability.view)
+@GraphQL(filter: Ability.view)
 @GraphQLPaginate()
 @GraphQLFind()
 @GraphQLCreate(dto: NoteDto, owner: 'userId')

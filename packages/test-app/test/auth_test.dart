@@ -78,7 +78,7 @@ void main() {
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
 
-    test('@GraphQLType(guard: true) guards the model writes', () async {
+    test('@GraphQL(guard: true) guards the model writes', () async {
       Map<String, Object?> res = await run(
         client,
         'mutation { deleteMember(id: "2") }',
@@ -224,6 +224,27 @@ void main() {
         'b': 'tester',
       });
       expect(FakeAuthMiddleware.runs, 1);
+    });
+
+    test('can: a constant of the policy class', () async {
+      // @GraphQLUpdate(can: ArticlePolicy.edit)
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { updateArticle(id: "3", input: {title: "Hacked"}) '
+        '{ title } }',
+        user: 'intruder',
+      );
+      expect(_codes(res), <Object?>['FORBIDDEN']);
+      res = await run(
+        client,
+        'mutation { updateArticle(id: "3", input: {title: "Bobby"}) '
+        '{ title } }',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'updateArticle': <String, Object?>{'title': 'Bobby'},
+        },
+      });
     });
 
     test('the policy guards update and delete', () async {

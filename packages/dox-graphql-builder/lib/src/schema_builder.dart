@@ -11,7 +11,7 @@ import 'schema_writer.dart';
 /// schema of the app. Give it to `GraphQLConfig(schema: graphqlSchema)`.
 ///
 /// It reads every library in `lib/` and finds:
-/// - classes with `@GraphQLType()`: the object types. On a model, the
+/// - classes with `@GraphQL()`: the object types. On a model, the
 ///   operation annotations (`@GraphQLAll()`, `@GraphQLFind()`, ...) give
 ///   its root fields,
 /// - classes with `@GraphQLQuery()`, `@GraphQLMutation()` or
@@ -58,7 +58,7 @@ class GraphQLSchemaBuilder implements Builder {
       if (!await resolver.isLibrary(id)) continue;
       LibraryElement library = await resolver.libraryFor(id);
       for (ClassElement element in library.classes) {
-        if (SchemaReader.annotation(element, 'GraphQLType') != null) {
+        if (SchemaReader.annotation(element, 'GraphQL') != null) {
           types.add(element);
         }
         SchemaReader.checkOperations(element);

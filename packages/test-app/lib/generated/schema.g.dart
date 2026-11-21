@@ -30,11 +30,12 @@ import 'package:dox_graphql_test_app/app/repositories/repositories.dart' as i18;
 import 'package:dox_graphql_test_app/app/graphql/book.resolver.dart' as i19;
 import 'package:dox_graphql_test_app/app/dtos/create_book.dart' as i20;
 import 'package:dox_graphql_test_app/app/graphql/math.resolver.dart' as i21;
-import 'package:dox_graphql_test_app/app/services/post_service.dart' as i22;
-import 'package:dox_graphql_test_app/app/graphql/post.resolver.dart' as i23;
+import 'package:dox_graphql_test_app/app/graphql/note.resolver.dart' as i22;
+import 'package:dox_graphql_test_app/app/services/post_service.dart' as i23;
+import 'package:dox_graphql_test_app/app/graphql/post.resolver.dart' as i24;
 
 /// The GraphQL schema of the app, made from the
-/// `@GraphQLType`, `@GraphQLAll`, `@GraphQLQuery`, ... annotations.
+/// `@GraphQL`, `@GraphQLAll`, `@GraphQLQuery`, ... annotations.
 /// Use it in `GraphQLConfig(schema: graphqlSchema)`.
 final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
     GraphQLSchema<DoxGraphQLContext>(
@@ -286,11 +287,37 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
                 i21.MathResolver().path(info.context),
           ),
           Field<Object?, DoxGraphQLContext>(
+            'madeNotes',
+            _tNote.nonNull.list,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                _filterList<i8.Note>(
+                  info,
+                  'view',
+                  Future<List<i8.Note>?>.value(i22.NoteResolver().madeNotes()),
+                ),
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'hiddenNote',
+            _tNote,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                _filterOne<i8.Note>(
+                  info,
+                  'view',
+                  Future<i8.Note?>.value(i22.NoteResolver().hiddenNote()),
+                ),
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'noteBox',
+            _tNoteBox,
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                i22.NoteResolver().noteBox(),
+          ),
+          Field<Object?, DoxGraphQLContext>(
             'postsWithUsers',
             _tPost.nonNull.list,
             description: 'The posts, with their users preloaded.',
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                i23.PostResolver(info.context.make<i22.PostService>())
+                i24.PostResolver(info.context.make<i23.PostService>())
                     .postsWithUsers(),
           ),
         ],
@@ -327,7 +354,11 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
             _tDoc,
             args: <Argument>[Argument('input', _iCreateDocInput.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _createDoc(info),
+                _filterOne<i5.Doc>(
+                  info,
+                  'view',
+                  Future<i5.Doc?>.value(_createDoc(info)),
+                ),
           ),
           Field<Object?, DoxGraphQLContext>(
             'updateDoc',
@@ -338,7 +369,11 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
               Argument('input', _iUpdateDocInput.nonNull),
             ],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _updateDoc(info),
+                _filterOne<i5.Doc>(
+                  info,
+                  'view',
+                  Future<i5.Doc?>.value(_updateDoc(info)),
+                ),
           ),
           Field<Object?, DoxGraphQLContext>(
             'deleteDoc',
@@ -379,7 +414,11 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
             guard: true,
             args: <Argument>[Argument('input', _iCreateNoteInput.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _createNote(info),
+                _filterOne<i8.Note>(
+                  info,
+                  'view',
+                  Future<i8.Note?>.value(_createNote(info)),
+                ),
           ),
           Field<Object?, DoxGraphQLContext>(
             'updateNote',
@@ -390,7 +429,11 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
               Argument('input', _iUpdateNoteInput.nonNull),
             ],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _updateNote(info),
+                _filterOne<i8.Note>(
+                  info,
+                  'view',
+                  Future<i8.Note?>.value(_updateNote(info)),
+                ),
           ),
           Field<Object?, DoxGraphQLContext>(
             'deleteNote',
@@ -444,6 +487,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
       types: <NamedType>[
         _tAuthor,
         _tBook,
+        _tNoteBox,
         _tAccount,
         _tArticle,
         _tComment,
@@ -525,6 +569,35 @@ final ObjectType<i1.BookItem, DoxGraphQLContext> _tBook =
                 info.context.make<i18.BookRepository>(),
                 info.context.make<i18.AuthorRepository>(),
               ).author(s, info.context),
+        ),
+      ],
+    );
+
+final ObjectType<i1.NoteBox, DoxGraphQLContext> _tNoteBox =
+    ObjectType<i1.NoteBox, DoxGraphQLContext>(
+      'NoteBox',
+      description: 'Notes in a plain class, not saved. Note has `filter:`: the note with the\ntitle `hidden` is left out of every field.',
+      fields: () => <Field<i1.NoteBox, DoxGraphQLContext>>[
+        Field<i1.NoteBox, DoxGraphQLContext>(
+          'notes',
+          _tNote.nonNull.list.nonNull,
+          resolve: (i1.NoteBox s, ResolveInfo<DoxGraphQLContext> info) =>
+              _filterList<i8.Note>(
+                info,
+                'view',
+                Future<List<i8.Note>?>.value(s.notes),
+              ),
+        ),
+        Field<i1.NoteBox, DoxGraphQLContext>(
+          'first',
+          _tNote,
+          description: 'the first note',
+          resolve: (i1.NoteBox s, ResolveInfo<DoxGraphQLContext> info) =>
+              _filterOne<i8.Note>(
+                info,
+                'view',
+                Future<i8.Note?>.value(s.first),
+              ),
         ),
       ],
     );
@@ -984,6 +1057,17 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
                     (i9.Post p) => p.images,
                   ),
             ),
+          Field<i9.Post, DoxGraphQLContext>(
+            'titleNote',
+            _tNote,
+            description: 'A note made from the title, not saved. Note has `filter:`, so the\nnote of the post "Second" (title `hidden`) is null.',
+            resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
+                _filterOne<i8.Note>(
+                  info,
+                  'view',
+                  Future<i8.Note?>.value(s.titleNote),
+                ),
+          ),
           Field<i9.Post, DoxGraphQLContext>(
             'excerpt',
             graphqlString.nonNull,
@@ -1484,10 +1568,10 @@ Future<i3.Article?> _updateArticle(ResolveInfo<DoxGraphQLContext> info) async {
     int.tryParse(info.args.get<String>('id')!),
   );
   if (model == null) {
-    await _allowMissing(info, 'update', i3.Article());
+    await _allowMissing(info, 'edit', i3.Article());
     return null;
   }
-  await _allow(info, 'update', model);
+  await _allow(info, 'edit', model);
   InputValues input = info.args.input('input')!;
   Map<String, Object?> given = _mUpdateArticleInput(input);
   // the other fields keep their stored values, and are not checked
@@ -1801,10 +1885,10 @@ Future<void> _allow(
 
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
-/// answer does not show which ids exist. A policy that fails to read the
-/// empty row (a null check, a missing value, a `late` field that is not
-/// set) denies. Other errors, like a
-/// database error, are thrown.
+/// answer does not show which ids exist. Any error of the policy on the
+/// empty row (a null check, a `late` field that is not set, a parse of an
+/// empty value) denies: an id that does not exist must not give another
+/// answer than one the user may not see.
 Future<void> _allowMissing(
   ResolveInfo<DoxGraphQLContext> info,
   String ability,
@@ -1814,16 +1898,7 @@ Future<void> _allowMissing(
   bool allowed;
   try {
     allowed = await Gate.allows(user, ability, blank);
-  } on TypeError {
-    allowed = false;
-  } on StateError {
-    allowed = false;
-  } on NoSuchMethodError {
-    allowed = false;
-  } on Error catch (e) {
-    // a `late` field of the blank row that is not set. The type of the
-    // error is not public, and --obfuscate renames it: read the message.
-    if (!e.toString().contains('has not been initialized')) rethrow;
+  } on Object {
     allowed = false;
   }
   if (!allowed) throw _denied(user);
@@ -1859,19 +1934,20 @@ Future<T?> _filterOne<T extends Object>(
 
 /// [page] with only the rows that [ability] allows (`filter:`). The
 /// count query ran before, so `total` and `lastPage` still count the
-/// rows that are left out.
+/// rows that are left out, and `firstItem` and `lastItem` give the rows
+/// of the page before the filter.
 Future<Pagination<T>> _filterPage<T extends Object>(
   ResolveInfo<DoxGraphQLContext> info,
   String ability,
   Future<Pagination<T>> page,
 ) async {
   Pagination<T> result = await page;
-  result.data = (await _filterList<T>(
+  List<T> kept = (await _filterList<T>(
     info,
     ability,
     Future<List<T>>.value(result.data),
   ))!;
-  return result;
+  return GraphQLOrm.filteredPage<T>(result, kept);
 }
 
 GraphQLError _denied(Object? user) =>
@@ -1880,17 +1956,13 @@ GraphQLError _denied(Object? user) =>
 /// The abilities of `can:` and `filter:`, checked when the
 /// app starts (`GraphQLSchema.startChecks`).
 void _checkAbilities() {
-  _checkAbility<i3.Article>(
-    '@GraphQLUpdate(can: \'update\')',
-    'Article',
-    'update',
-  );
+  _checkAbility<i3.Article>('@GraphQLUpdate(can: \'edit\')', 'Article', 'edit');
   _checkAbility<i3.Article>(
     '@GraphQLDelete(can: \'delete\')',
     'Article',
     'delete',
   );
-  _checkAbility<i5.Doc>('@GraphQLType(filter: \'view\')', 'Doc', 'view');
+  _checkAbility<i5.Doc>('@GraphQL(filter: \'view\')', 'Doc', 'view');
   _checkAbility<i5.Doc>('@GraphQLAll(can: \'viewAny\')', 'Doc', 'viewAny');
   _checkAbility<i5.Doc>('@GraphQLPaginate(can: \'viewAny\')', 'Doc', 'viewAny');
   _checkAbility<i5.Doc>('@GraphQLFind(can: \'view\')', 'Doc', 'view');
@@ -1907,7 +1979,7 @@ void _checkAbilities() {
     'Member',
     'delete',
   );
-  _checkAbility<i8.Note>('@GraphQLType(filter: \'view\')', 'Note', 'view');
+  _checkAbility<i8.Note>('@GraphQL(filter: \'view\')', 'Note', 'view');
   _checkAbility<i8.Note>('@GraphQLUpdate(can: \'update\')', 'Note', 'update');
   _checkAbility<i8.Note>('@GraphQLDelete(can: \'delete\')', 'Note', 'delete');
   _checkAbility<i9.Post>('@GraphQLUpdate(can: \'update\')', 'Post', 'update');

@@ -137,6 +137,21 @@ void main() {
       expect(saved.userId, 1);
     });
 
+    test(
+      'a created row that the filter denies is saved, and is null',
+      () async {
+        int before = await count();
+        Map<String, Object?> res = await send(
+          'mutation { createNote(input: {title: "hidden"}) { id } }',
+          bearer: token,
+        );
+        expect(res, <String, Object?>{
+          'data': <String, Object?>{'createNote': null},
+        });
+        expect(await count(), before + 1);
+      },
+    );
+
     test('a client can not send the owner', () async {
       int before = await count();
       Map<String, Object?> res = await send(

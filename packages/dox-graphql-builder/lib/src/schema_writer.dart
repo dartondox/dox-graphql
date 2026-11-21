@@ -31,10 +31,10 @@ Future<void> _allow(
 
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
-/// answer does not show which ids exist. A policy that fails to read the
-/// empty row (a null check, a missing value, a `late` field that is not
-/// set) denies. Other errors, like a
-/// database error, are thrown.
+/// answer does not show which ids exist. Any error of the policy on the
+/// empty row (a null check, a `late` field that is not set, a parse of an
+/// empty value) denies: an id that does not exist must not give another
+/// answer than one the user may not see.
 Future<void> _allowMissing(
   ResolveInfo<$_context> info,
   String ability,
@@ -44,16 +44,7 @@ Future<void> _allowMissing(
   bool allowed;
   try {
     allowed = await Gate.allows(user, ability, blank);
-  } on TypeError {
-    allowed = false;
-  } on StateError {
-    allowed = false;
-  } on NoSuchMethodError {
-    allowed = false;
-  } on Error catch (e) {
-    // a `late` field of the blank row that is not set. The type of the
-    // error is not public, and --obfuscate renames it: read the message.
-    if (!e.toString().contains('has not been initialized')) rethrow;
+  } on Object {
     allowed = false;
   }
   if (!allowed) throw _denied(user);
@@ -89,15 +80,16 @@ Future<T?> _filterOne<T extends Object>(
 
 /// [page] with only the rows that [ability] allows (`filter:`). The
 /// count query ran before, so `total` and `lastPage` still count the
-/// rows that are left out.
+/// rows that are left out, and `firstItem` and `lastItem` give the rows
+/// of the page before the filter.
 Future<Pagination<T>> _filterPage<T extends Object>(
   ResolveInfo<$_context> info,
   String ability,
   Future<Pagination<T>> page,
 ) async {
   Pagination<T> result = await page;
-  result.data = (await _filterList<T>(info, ability, Future<List<T>>.value(result.data)))!;
-  return result;
+  List<T> kept = (await _filterList<T>(info, ability, Future<List<T>>.value(result.data)))!;
+  return GraphQLOrm.filteredPage<T>(result, kept);
 }
 
 GraphQLError _denied(Object? user) =>
@@ -192,7 +184,7 @@ void _checkAbility<M>(String annotation, String model, String ability) {
     out
       ..writeln('/// The GraphQL schema of the app, made from the')
       ..writeln(
-        '/// `@GraphQLType`, `@GraphQLAll`, `@GraphQLQuery`, ... annotations.',
+        '/// `@GraphQL`, `@GraphQLAll`, `@GraphQLQuery`, ... annotations.',
       )
       ..writeln('/// Use it in `GraphQLConfig(schema: graphqlSchema)`.')
       ..writeln(

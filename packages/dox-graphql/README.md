@@ -20,7 +20,7 @@ builder. Use `dox add graphql --no-orm` for an app without models.
 
 ```dart
 @DoxModel(table: 'posts')
-@GraphQLType(filter: Ability.view)
+@GraphQL(filter: Ability.view)
 @GraphQLAll(can: Ability.viewAny)
 @GraphQLPaginate(can: Ability.viewAny)
 @GraphQLFind(can: Ability.view)
@@ -49,7 +49,7 @@ has no query and no mutation.
 
 | Annotation | GraphQL field |
 |---|---|
-| `@GraphQLType()` | The `Post` type. |
+| `@GraphQL()` | The `Post` type. |
 | `@GraphQLAll()` | `posts(limit, offset)` |
 | `@GraphQLPaginate()` | `posts(first, page)`, or `postsPaginate(first, page)` if the model also has `@GraphQLAll()` |
 | `@GraphQLFind()` | `post(id)` |
@@ -71,7 +71,7 @@ has no query and no mutation.
 - Each field is public by default.
 - `guard: true` on an annotation makes its field need a login. A guest
   gets `UNAUTHENTICATED`, and the resolver does not run.
-- `@GraphQLType(guard: true)` makes each field that gives the type need
+- `@GraphQL(guard: true)` makes each field that gives the type need
   a login: the queries, the mutations, the relations and your own
   resolvers.
 - `guard: true` needs `AuthMiddleware()` in `middleware`. Without it, the
@@ -89,7 +89,7 @@ has no query and no mutation.
   `@GraphQLDelete` ask it with the user and the row.
   Thus, use `viewAny` on All and Paginate and `create` on Create, not
   an ability that needs a row, like `view` or `update`.
-- `@GraphQLType(filter: Ability.view)` hides the rows that the ability
+- `@GraphQL(filter: Ability.view)` hides the rows that the ability
   denies, with no error, in each field that gives the type:
   - The list, the paged list and the list relations leave the rows out.
     Thus, a list can have fewer rows than `limit`.

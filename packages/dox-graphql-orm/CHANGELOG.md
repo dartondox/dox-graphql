@@ -6,6 +6,8 @@
 - New: `GraphQLOrm.paginatorInfo`, the shared `PaginatorInfo` type.
   `firstItem` and `lastItem` are null on an empty page.
 - Exports `Pagination` of dox_orm, for the generated paginator types.
+- New: `GraphQLOrm.filteredPage` keeps the rows of `filter:`. `firstItem`
+  and `lastItem` still count the rows of the page before the filter.
 
 - Fix: `GraphQLOrm.relation` gives null for a relation with no related
   row when the model field is `late` and not nullable. Before, the

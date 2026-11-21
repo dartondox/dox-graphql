@@ -3,20 +3,25 @@
 - Reads the operation annotations of a model: `@GraphQLAll`,
   `@GraphQLPaginate`, `@GraphQLFind`, `@GraphQLCreate`,
   `@GraphQLUpdate` and `@GraphQLDelete`. A model without them has no
-  root field. `@GraphQLType(queries:, dto:, auth:, policy:, owner:)` is
+  root field. `@GraphQL(queries:, dto:, auth:, policy:, owner:)` is
   gone.
 - `can:` writes a `Gate.allows` check into the resolver. Find, update
   and delete check a missing id as a blank row, so a denied user gets
   the same error for an id that exists and for an id that does not
   exist. The generated code does not ask `Gate.hasAbility` any more: a
   check is in the code only when the annotation has `can:`.
-- `@GraphQLType(filter:)` writes the row filter into the lists and the
+- `@GraphQL(filter:)` writes the row filter into the lists and the
   relations to the model. A relation does not ask `viewAny` any more.
-  The find writes it too: a denied row gives null.
-- A missing id is checked as a blank row. A policy that reads a `late`
-  field of the blank row that is not set now denies. Before, the
-  request got an internal error, so a missing id gave another answer
-  than a denied id.
+  The find writes it too: a denied row gives null. Every other field
+  that gives the model also gets it: getters, fields of plain classes,
+  custom resolvers and the results of create and update.
+- A missing id is checked as a blank row. Any error of the policy on
+  the blank row (like a `late` field that is not set, or a parse of an
+  empty value) now denies. Before, the request got an internal error,
+  so a missing id gave another answer than a denied id.
+- A build warning for `@GraphQLUpdate` or `@GraphQLDelete` with no
+  `can:` and no `guard:` (on it or on the type): anyone can call it.
+- Reads `@GraphQL` (was `@GraphQLType`).
 - A type with `guard: true` writes `guard: true` on its paginator type
   and on its delete mutation.
 - `@GraphQLPaginate` writes a `<Model>Paginator` type and adds the
@@ -28,7 +33,7 @@
   an int or String column of the model, or is a field of the create or
   the update DTO.
 - The build fails when an operation annotation is on a plain class or
-  on a model with no `@GraphQLType`.
+  on a model with no `@GraphQL`.
 - Writes `guard:` (was `auth:`) of the annotations into the generated
   types and fields. `@ResolveField` is now `@GraphQLResolveField`.
 - A schema with types but no query gets the placeholder query. Before,
@@ -50,7 +55,7 @@
   The schema has one placeholder query, so the app starts. It goes away
   with the first real query.
 - First version: builds `lib/generated/schema.g.dart` with
-  `graphqlSchema` from `@GraphQLType`, `@GraphQLField`, `@GraphQLIgnore`,
+  `graphqlSchema` from `@GraphQL`, `@GraphQLField`, `@GraphQLIgnore`,
   `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField`.
   - Plain Dart classes become object types; their public fields, also
     the fields of superclasses, become fields.
@@ -60,7 +65,7 @@
     input type, and its rules run first.
   - A type that GraphQL can not show stops the build with an error that
     names the class and the member.
-- Models of dox_orm: `@GraphQLType()` on a `@DoxModel` makes `id` (an
+- Models of dox_orm: `@GraphQL()` on a `@DoxModel` makes `id` (an
   `ID`), the `@Column` fields and the relations into fields. Columns and
   relations in `hidden` are left out. With `visibleFields`, only those
   fields are in the type. Relations load in batches with dox_graphql_orm.

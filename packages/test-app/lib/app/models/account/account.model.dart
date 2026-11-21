@@ -8,7 +8,7 @@ part 'account.model.g.dart';
 /// `visibleFields` keeps only these fields. `docs` is a relation to a
 /// model with `filter:`.
 @DoxModel(table: 'accounts')
-@GraphQLType()
+@GraphQL()
 @GraphQLAll()
 @GraphQLFind()
 class Account extends AccountGenerator {

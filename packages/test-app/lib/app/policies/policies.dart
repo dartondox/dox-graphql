@@ -32,12 +32,16 @@ class MemberPolicy extends Policy<String, Member> {
 }
 
 class ArticlePolicy extends Policy<String, Article> {
+  /// A custom ability. Article reads it in `@GraphQLUpdate(can:)`, and this
+  /// file imports Article: the builder reads the constant value.
+  static const String edit = 'edit';
+
   bool update(String user, Article article) => _owner(user);
   bool delete(String user, Article article) => _owner(user);
 
   @override
   Map<String, Function> get abilities => <String, Function>{
-    Ability.update: update,
+    edit: update,
     Ability.delete: delete,
   };
 }

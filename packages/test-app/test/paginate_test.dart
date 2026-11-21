@@ -1,6 +1,7 @@
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_test_app/generated/schema.g.dart';
+import 'package:dox_orm/dox_orm.dart';
 import 'package:test/test.dart';
 
 import 'db.dart';
@@ -113,6 +114,41 @@ void main() {
     });
   });
 
+  test('filter: a hidden row in the middle of a page', () async {
+    for (String title in <String>['a', 'hidden', 'c', 'd']) {
+      await QueryBuilder.table('notes')
+          .insert(<String, dynamic>{'title': title, 'user_id': 1});
+    }
+    Map<String, Object?> res = await run(
+      client,
+      '{ notes(first: 3) { data { title } $_info } }',
+      user: null,
+    );
+    // the page has 3 rows before the filter: firstItem and lastItem agree
+    // with total and lastPage, count is the rows in data
+    expect(res, <String, Object?>{
+      'data': <String, Object?>{
+        'notes': <String, Object?>{
+          'data': <Object?>[
+            <String, Object?>{'title': 'a'},
+            <String, Object?>{'title': 'c'},
+          ],
+          'paginatorInfo': <String, Object?>{
+            'count': 2,
+            'currentPage': 1,
+            'firstItem': 1,
+            'lastItem': 3,
+            'hasMorePages': true,
+            'lastPage': 2,
+            'perPage': 3,
+            'total': 4,
+          },
+        },
+      },
+    });
+    await QueryBuilder.table('notes').delete();
+  });
+
   test('a first above 100, or below 1, is an error', () async {
     for ((String, String) c in <(String, String)>[
       ('first: 101', '"first" can be at most 100.'),
@@ -170,8 +206,9 @@ void main() {
             'paginatorInfo': <String, Object?>{
               'count': 1,
               'currentPage': 1,
+              // the page had 3 rows before the filter
               'firstItem': 1,
-              'lastItem': 1,
+              'lastItem': 3,
               'hasMorePages': false,
               'lastPage': 1,
               'perPage': 20,
