@@ -1,3 +1,9 @@
+## Unreleased
+
+- `GraphQLOrm.many` makes one `Future` less for each parent row. A query
+  with a list relation is faster when many requests wait at the same
+  time.
+
 ## 0.0.1
 
 - New: `GraphQLOrm.paginate` for `@GraphQLPaginate`. It uses `paginate`

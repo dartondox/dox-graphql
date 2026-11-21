@@ -166,8 +166,13 @@ class GraphQLOrm {
     DoxGraphQLContext context,
     List<R>? Function(P parent) read, {
     bool pivot = false,
-  }) async {
-    if (parent.getPreload().contains(name)) return read(parent);
+  }) {
+    // Not `async`: one request calls this for each parent, and each
+    // parent then waits for the batch. An `async` body adds one more
+    // Future and one more frame to each of them.
+    if (parent.getPreload().contains(name)) {
+      return Future<List<R>?>.value(read(parent));
+    }
     DataLoader<P, List<R>> loader = context.loader<P, List<R>>(
       'dox_graphql_orm:many:$P.$name',
       () => DataLoader<P, List<R>>(
@@ -175,7 +180,8 @@ class GraphQLOrm {
             _loadMany<P, R>(parents, name, pivot, context.maxRelationRows),
       ),
     );
-    return (await loader.load(parent)) ?? <R>[];
+    // The batch gives a list for each parent, never null.
+    return loader.load(parent);
   }
 
   static Future<List<List<R>>> _loadMany<P extends Model<P>, R>(
