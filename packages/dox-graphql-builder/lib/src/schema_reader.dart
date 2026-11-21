@@ -770,10 +770,12 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     _checkName(name, where, member);
     String gql = _outputType(_unwrapFuture(type), where, member);
     bool? fieldAuth = field?.getField('auth')?.toBoolValue();
-    if (relation && gql.endsWith('.nonNull') && _mayRefuse(type, fieldAuth)) {
-      // The target can refuse (policy or login), so the field is null then.
-      // A non-null field would null the parent too. List items stay
-      // non-null: a policy drops a row, it does not null it.
+    // A relation can fail on its own (a policy, a login, the row cap, a
+    // database error). A field that gives another type can be refused too.
+    // A non-null field would null the parent then, so the field is
+    // nullable. List items stay non-null: a policy drops a row, it does not
+    // null it.
+    if (gql.endsWith('.nonNull') && (relation || _mayRefuse(type, fieldAuth))) {
       gql = gql.substring(0, gql.length - '.nonNull'.length);
     }
     _addField(
@@ -793,10 +795,14 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     );
   }
 
-  /// True when a relation of Dart type [type] can be refused at run time:
-  /// the target has a `policy:`, or the field can need a login. A field
-  /// with no `auth:` on a type with no `auth:` uses the app default (a
-  /// login when the app has an auth middleware), which is not known here.
+  /// True when a field of Dart type [type] gives a registered type that
+  /// can be refused at run time. The type decides first, like
+  /// `GraphQLAuth.needsLogin`: a `policy:` or `auth: true` on the type
+  /// refuses, and `auth: false` on the type (with no policy) is public
+  /// unless the field has `auth: true`. Else the `auth:` of the field
+  /// decides. With no `auth:` on both, the app default applies (a login
+  /// when the app has an auth middleware). It is not known here, so the
+  /// field may refuse.
   bool _mayRefuse(DartType type, bool? fieldAuth) {
     DartType related = _unwrapFuture(type);
     if (related is InterfaceType && related.isDartCoreList) {

@@ -514,11 +514,9 @@ class Post extends Model<Post> {
       expect(out, isNot(contains('deletePost')));
     });
 
-    test(
-      'a relation that can refuse is nullable, the others are not',
-      () async {
-        String out = flat(
-          await _build('''
+    test('every relation is nullable, the list items are not', () async {
+      String out = flat(
+        await _build('''
 class PostPolicy extends Policy<User?, Post> {
   @override
   Map<String, Function> get abilities => <String, Function>{};
@@ -560,17 +558,46 @@ class Blog extends Model<Blog> {
   late User editor;
 }
 '''),
-        );
-        // a policy or a login can refuse: the field is nullable, the items
-        // are not (a refused row is dropped)
-        expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
-        expect(out, contains(flat("'first', _tPost,")));
-        expect(out, contains(flat("'comments', _tComment.nonNull.list,")));
-        // a public type with no policy never refuses
-        expect(out, contains(flat("'readers', _tUser.nonNull.list.nonNull,")));
-        expect(out, contains(flat("'editor', _tUser.nonNull,")));
-      },
-    );
+      );
+      // a relation can also fail on the row cap or the database, so it is
+      // always nullable. The items are not: a refused row is dropped.
+      expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
+      expect(out, contains(flat("'first', _tPost,")));
+      expect(out, contains(flat("'comments', _tComment.nonNull.list,")));
+      // also to a public type with no policy
+      expect(out, contains(flat("'readers', _tUser.nonNull.list,")));
+      expect(out, contains(flat("'editor', _tUser,")));
+    });
+
+    test('policy: with queries: false still guards the relations', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel()
+@GraphQLType(policy: PostPolicy, queries: false)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+
+@DoxModel(table: 'blogs')
+@GraphQLType()
+class Blog extends Model<Blog> {
+  @HasMany(Post)
+  List<Post> posts = <Post>[];
+}
+'''),
+      );
+      expect(out, isNot(contains("('post',")));
+      expect(out, isNot(contains('_findPost')));
+      expect(out, contains(flat("_allowIf<i1.Post>(info, 'viewAny')")));
+      expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
+    });
 
     test('policy: must be a Policy of the model', () async {
       String out = await _build('''

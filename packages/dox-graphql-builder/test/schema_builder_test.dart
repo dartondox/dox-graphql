@@ -236,8 +236,54 @@ class Post {
 }
 '''),
       );
-      expect(out, contains(flat("'posts', _tPost.nonNull.list.nonNull")));
+      // no `auth:` on Post: the app default may need a login, so the field
+      // may be refused and is nullable (the items are not)
+      expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
       expect(out, contains(flat("'author', _tUser,")));
+    });
+
+    test('a field or getter that gives a type that can refuse is '
+        'nullable', () async {
+      String out = flat(
+        await _build('''
+$_hello
+@GraphQLType(auth: true)
+class Secret {
+  final String name = '';
+}
+
+@GraphQLType(auth: false)
+class Open {
+  final String name = '';
+}
+
+@GraphQLType()
+class Page {
+  final Secret secret = Secret();
+  final List<Secret> secrets = <Secret>[];
+  final Open open = Open();
+  final List<Open> opens = <Open>[];
+
+  @GraphQLField()
+  Secret get viaGetter => Secret();
+
+  @GraphQLField()
+  Open get openGetter => Open();
+
+  @GraphQLField(auth: true)
+  Open get lockedGetter => Open();
+}
+'''),
+      );
+      // a guest gets UNAUTHENTICATED on these: only the field is null
+      expect(out, contains(flat("'secret', _tSecret,")));
+      expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
+      expect(out, contains(flat("'viaGetter', _tSecret,")));
+      expect(out, contains(flat("'lockedGetter', _tOpen, auth: true,")));
+      // a public type never refuses
+      expect(out, contains(flat("'open', _tOpen.nonNull,")));
+      expect(out, contains(flat("'opens', _tOpen.nonNull.list.nonNull,")));
+      expect(out, contains(flat("'openGetter', _tOpen.nonNull,")));
     });
   });
 

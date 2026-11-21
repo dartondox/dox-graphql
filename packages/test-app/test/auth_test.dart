@@ -128,6 +128,19 @@ void main() {
       });
     });
 
+    test('a guest keeps the sibling fields of a refused relation', () async {
+      // Comment needs a login by default: only `comments` is null
+      Map<String, Object?> res = await run(
+        client,
+        '{ post(id: "1") { title comments { id } } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{
+        'post': <String, Object?>{'title': 'Hello GraphQL', 'comments': null},
+      });
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
     test('a request that does not need the user runs no login', () async {
       FakeAuthMiddleware.runs = 0;
       await run(client, '{ path article(id: "1") { title } }');

@@ -1,9 +1,13 @@
 ## Unreleased
 
-- Fix: a relation to a model that can refuse is now nullable. The model
-  has a `policy:`, or the field can need a login. Before, a refused
-  relation made the whole parent null. Now only that field is null. List
-  items stay non-null: a refused row is dropped.
+- Fix: a relation is now always nullable. Before, a refused relation
+  (a policy, a login, the row cap or a database error) made the whole
+  parent null. Now only that field is null. List items stay non-null: a
+  refused row is dropped.
+- Fix: a field or getter of a plain class that gives a type is nullable
+  when the type can refuse. It has a `policy:` or `auth: true`, or it has
+  no `auth:`. The type decides first. A type with `auth: false` and no
+  policy is public, unless the field has `auth: true`.
 - Fix: the update and delete mutations of a model with `owner:` need a
   login, like create. A guest gets `UNAUTHENTICATED` before the lookup.
 - `policy:` now works without `dto:`. The model has the guarded reads

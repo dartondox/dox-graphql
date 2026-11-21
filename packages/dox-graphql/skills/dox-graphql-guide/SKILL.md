@@ -105,7 +105,7 @@ The `id`, the columns and the relations become fields. The model gets these auto
 
 - `auth: true` is only a login check. To control which rows a user can read, give the model a `policy:` with `viewAny` and `view` (see section 5). Put secret columns in `hidden`.
 - `policy:` works without `dto:`. The model then has the guarded reads and no mutations.
-- A relation to a model that can refuse (it has a `policy:`, or it can need a login) is nullable in the schema, like `[Comment!]`. When the target refuses, only that field is `null`. The parent keeps its other fields. A relation to a model with `auth: false` and no policy stays non-null.
+- A relation is always nullable in the schema, like `[Comment!]` and `Post`. When it fails (a policy, a login, the row cap or a database error), only that field is `null`. The parent keeps its other fields. List items stay non-null. A field of a plain class that gives a type is nullable when the type can refuse: it has a `policy:` or `auth: true`, or it has no `auth:`. A type with `auth: false` and no policy is public, unless the field has `auth: true`.
 - `queries: false` removes the list and find queries. The type stays for relations and resolvers.
 - `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it. Create, update and delete then need a login.
 - A column or relation in `hidden` of the model is not a field. `hidden` uses the snake_case name of the column or relation, for example `password_hash`, not the Dart field name. If `visibleFields` of the model is not empty, only those names are fields. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.

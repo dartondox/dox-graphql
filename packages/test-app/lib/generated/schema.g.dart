@@ -723,12 +723,12 @@ _tDoc = ObjectType<i5.Doc, DoxGraphQLContext>(
         Field<i5.Doc, DoxGraphQLContext>(
           'parent',
           _tDoc,
-          description: 'A single relation to a model whose policy has `view`.',
+          description: 'A single relation to a model whose policy has `view`. It is not\nnullable in Dart: only the field can be null, not the parent.',
           resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i5.Doc>(info, 'viewAny').then(
                 (_) => _viewOne<i5.Doc>(
                   info,
-                  GraphQLOrm.relation<i5.Doc, i5.Doc?>(
+                  GraphQLOrm.relation<i5.Doc, i5.Doc>(
                     s,
                     'parent',
                     info.context,
@@ -1034,6 +1034,7 @@ final ObjectType<i10.Profile, DoxGraphQLContext> _tProfile =
 final ObjectType<i11.Tag, DoxGraphQLContext> _tTag =
     ObjectType<i11.Tag, DoxGraphQLContext>(
       'Tag',
+      auth: false,
       fields: () {
         i11.Tag model = i11.Tag();
         List<String> hidden = model.hidden;

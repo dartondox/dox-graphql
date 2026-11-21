@@ -23,9 +23,10 @@ class Doc extends DocGenerator {
   @Column()
   int? parentId;
 
-  /// A single relation to a model whose policy has `view`.
+  /// A single relation to a model whose policy has `view`. It is not
+  /// nullable in Dart: only the field can be null, not the parent.
   @BelongsTo(Doc, foreignKey: 'parent_id')
-  Doc? parent;
+  late Doc parent;
 
   /// The doc whose parent this one is: a HasOne relation.
   @HasOne(Doc, foreignKey: 'parent_id')

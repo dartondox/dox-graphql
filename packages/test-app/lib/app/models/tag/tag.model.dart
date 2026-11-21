@@ -4,7 +4,7 @@ import 'package:dox_orm/dox_orm.dart';
 part 'tag.model.g.dart';
 
 @DoxModel(table: 'tags')
-@GraphQLType(queries: false)
+@GraphQLType(queries: false, auth: false)
 class Tag extends TagGenerator {
   @Column()
   String? name;
