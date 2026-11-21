@@ -149,17 +149,18 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
               Argument('page', graphqlInt, defaultValue: '1'),
             ],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                GraphQLOrm.paginate<i8.Note>(i8.Note(), info),
+                _filterPage<i8.Note>(
+                  info,
+                  'view',
+                  GraphQLOrm.paginate<i8.Note>(i8.Note(), info),
+                ),
           ),
           Field<Object?, DoxGraphQLContext>(
             'note',
             _tNote,
             args: <Argument>[Argument('id', graphqlId.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                GraphQLOrm.find<i8.Note>(
-                  i8.Note(),
-                  int.tryParse(info.args.get<String>('id')!),
-                ),
+                _findNote(info),
           ),
           Field<Object?, DoxGraphQLContext>(
             'posts',
@@ -200,6 +201,16 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
             ],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 GraphQLOrm.list<i12.User>(i12.User(), info),
+          ),
+          Field<Object?, DoxGraphQLContext>(
+            'usersPaginate',
+            _pUser,
+            args: <Argument>[
+              Argument('first', graphqlInt, defaultValue: '20'),
+              Argument('page', graphqlInt, defaultValue: '1'),
+            ],
+            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
+                GraphQLOrm.paginate<i12.User>(i12.User(), info),
           ),
           Field<Object?, DoxGraphQLContext>(
             'user',
@@ -357,6 +368,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
           Field<Object?, DoxGraphQLContext>(
             'deleteMember',
             graphqlBoolean,
+            guard: true,
             args: <Argument>[Argument('id', graphqlId.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 _deleteMember(info),
@@ -446,6 +458,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
         _pDoc,
         _pNote,
         _pPost,
+        _pUser,
         GraphQLOrm.paginatorInfo,
       ],
       startChecks: <void Function()>[_checkAbilities],
@@ -844,7 +857,7 @@ final ObjectType<i7.Member, DoxGraphQLContext> _tMember =
 final ObjectType<i8.Note, DoxGraphQLContext> _tNote =
     ObjectType<i8.Note, DoxGraphQLContext>(
       'Note',
-      description: 'Public to read, but `owner:` makes create need a login. The create\nsets `userId` to the logged-in user. Only @GraphQLPaginate, so the\npaged list is `notes`.',
+      description: 'Public to read, but `owner:` makes create need a login. The create\nsets `userId` to the logged-in user. Only @GraphQLPaginate, so the\npaged list is `notes`. A note with the title `hidden` is left out of\nevery read (`filter:`), also of the find with no `can:`.',
       fields: () {
         i8.Note model = i8.Note();
         List<String> hidden = model.hidden;
@@ -1183,6 +1196,27 @@ _pPost = ObjectType<Pagination<i9.Post>, DoxGraphQLContext>(
   ],
 );
 
+final ObjectType<Pagination<i12.User>, DoxGraphQLContext>
+_pUser = ObjectType<Pagination<i12.User>, DoxGraphQLContext>(
+  'UserPaginator',
+  description: 'A page of User rows.',
+  guard: true,
+  fields: () => <Field<Pagination<i12.User>, DoxGraphQLContext>>[
+    Field<Pagination<i12.User>, DoxGraphQLContext>(
+      'data',
+      _tUser.nonNull.list.nonNull,
+      resolve: (Pagination<i12.User> s, ResolveInfo<DoxGraphQLContext> info) =>
+          s.data,
+    ),
+    Field<Pagination<i12.User>, DoxGraphQLContext>(
+      'paginatorInfo',
+      GraphQLOrm.paginatorInfo.nonNull,
+      resolve: (Pagination<i12.User> s, ResolveInfo<DoxGraphQLContext> info) =>
+          s,
+    ),
+  ],
+);
+
 final EnumType<i1.Genre> _eGenre = EnumType<i1.Genre>(
   'Genre',
   <EnumValue<i1.Genre>>[
@@ -1486,9 +1520,10 @@ Future<bool> _deleteArticle(ResolveInfo<DoxGraphQLContext> info) async {
   return true;
 }
 
-/// The Doc with the id, after the 'view' check. A missing id
-/// is checked as a blank Doc, so a denied user gets the same error for
-/// an id that exists and one that does not.
+/// The Doc with the id, after the `can:` check and the `filter:` of
+/// the type. A missing id is checked as a blank Doc, so a denied user
+/// gets the same error for an id that exists and one that does not. A
+/// row that the filter denies gives null, like a missing id.
 Future<i5.Doc?> _findDoc(ResolveInfo<DoxGraphQLContext> info) async {
   i5.Doc? model = await GraphQLOrm.find<i5.Doc>(
     i5.Doc(),
@@ -1497,7 +1532,7 @@ Future<i5.Doc?> _findDoc(ResolveInfo<DoxGraphQLContext> info) async {
   await (model == null
       ? _allowMissing(info, 'view', i5.Doc())
       : _allow(info, 'view', model));
-  return model;
+  return await _filterOne<i5.Doc>(info, 'view', Future<i5.Doc?>.value(model));
 }
 
 /// Makes a Doc from the input of `@GraphQLCreate`.
@@ -1612,6 +1647,18 @@ Future<bool> _deleteMember(ResolveInfo<DoxGraphQLContext> info) async {
   await _allow(info, 'delete', model);
   await model.delete();
   return true;
+}
+
+/// The Note with the id, after the `can:` check and the `filter:` of
+/// the type. A missing id is checked as a blank Note, so a denied user
+/// gets the same error for an id that exists and one that does not. A
+/// row that the filter denies gives null, like a missing id.
+Future<i8.Note?> _findNote(ResolveInfo<DoxGraphQLContext> info) async {
+  i8.Note? model = await GraphQLOrm.find<i8.Note>(
+    i8.Note(),
+    int.tryParse(info.args.get<String>('id')!),
+  );
+  return await _filterOne<i8.Note>(info, 'view', Future<i8.Note?>.value(model));
 }
 
 /// Makes a Note from the input of `@GraphQLCreate`.
@@ -1755,7 +1802,8 @@ Future<void> _allow(
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
 /// answer does not show which ids exist. A policy that fails to read the
-/// empty row (a null check, a missing value) denies. Other errors, like a
+/// empty row (a null check, a missing value, a `late` field that is not
+/// set) denies. Other errors, like a
 /// database error, are thrown.
 Future<void> _allowMissing(
   ResolveInfo<DoxGraphQLContext> info,
@@ -1771,6 +1819,11 @@ Future<void> _allowMissing(
   } on StateError {
     allowed = false;
   } on NoSuchMethodError {
+    allowed = false;
+  } on Error catch (e) {
+    // a `late` field of the blank row that is not set. The type of the
+    // error is not public, and --obfuscate renames it: read the message.
+    if (!e.toString().contains('has not been initialized')) rethrow;
     allowed = false;
   }
   if (!allowed) throw _denied(user);
@@ -1854,6 +1907,7 @@ void _checkAbilities() {
     'Member',
     'delete',
   );
+  _checkAbility<i8.Note>('@GraphQLType(filter: \'view\')', 'Note', 'view');
   _checkAbility<i8.Note>('@GraphQLUpdate(can: \'update\')', 'Note', 'update');
   _checkAbility<i8.Note>('@GraphQLDelete(can: \'delete\')', 'Note', 'delete');
   _checkAbility<i9.Post>('@GraphQLUpdate(can: \'update\')', 'Post', 'update');
@@ -1861,16 +1915,17 @@ void _checkAbilities() {
 }
 
 /// Throws when [ability] (of [annotation] on [model]) is not an ability
-/// of the policy of [M] and not a `Gate.define`: a typo, or a policy that
-/// is not registered.
+/// of the policy of [M]: a typo. A model with no policy needs a
+/// `Gate.define` of [ability].
 void _checkAbility<M>(String annotation, String model, String ability) {
-  if (Gate.isDefined(ability)) return;
   Policy<dynamic, M>? policy = Gate.policyOf<M>();
   if (policy == null) {
+    if (Gate.isDefined(ability)) return;
     throw StateError(
       '$annotation on $model: $model has no policy and there is no '
       "Gate.define('$ability'). Register the policy with "
-      'Gate.policy<$model>(...) in the setup() of a provider.',
+      'Gate.policy<$model>(...) in the setup() of a provider: the check '
+      'runs in GraphQLProvider.boot(), after every setup().',
     );
   }
   if (policy.has(ability)) return;

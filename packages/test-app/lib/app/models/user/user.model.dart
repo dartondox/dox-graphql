@@ -11,6 +11,7 @@ part 'user.model.g.dart';
 @DoxModel(table: 'users')
 @GraphQLType(guard: true)
 @GraphQLAll()
+@GraphQLPaginate()
 @GraphQLFind()
 class User extends UserGenerator {
   @override

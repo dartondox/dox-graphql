@@ -32,7 +32,8 @@ Future<void> _allow(
 /// [_allow] for an id with no row: [blank] is a new, empty row. A user
 /// the policy denies gets the same error as for a row that exists, so the
 /// answer does not show which ids exist. A policy that fails to read the
-/// empty row (a null check, a missing value) denies. Other errors, like a
+/// empty row (a null check, a missing value, a `late` field that is not
+/// set) denies. Other errors, like a
 /// database error, are thrown.
 Future<void> _allowMissing(
   ResolveInfo<$_context> info,
@@ -48,6 +49,11 @@ Future<void> _allowMissing(
   } on StateError {
     allowed = false;
   } on NoSuchMethodError {
+    allowed = false;
+  } on Error catch (e) {
+    // a `late` field of the blank row that is not set. The type of the
+    // error is not public, and --obfuscate renames it: read the message.
+    if (!e.toString().contains('has not been initialized')) rethrow;
     allowed = false;
   }
   if (!allowed) throw _denied(user);
@@ -101,16 +107,17 @@ GraphQLError _denied(Object? user) =>
   /// The start check of the abilities of `can:` and `filter:`.
   static const String _checkAbility = r'''
 /// Throws when [ability] (of [annotation] on [model]) is not an ability
-/// of the policy of [M] and not a `Gate.define`: a typo, or a policy that
-/// is not registered.
+/// of the policy of [M]: a typo. A model with no policy needs a
+/// `Gate.define` of [ability].
 void _checkAbility<M>(String annotation, String model, String ability) {
-  if (Gate.isDefined(ability)) return;
   Policy<dynamic, M>? policy = Gate.policyOf<M>();
   if (policy == null) {
+    if (Gate.isDefined(ability)) return;
     throw StateError(
       '$annotation on $model: $model has no policy and there is no '
       "Gate.define('$ability'). Register the policy with "
-      'Gate.policy<$model>(...) in the setup() of a provider.',
+      'Gate.policy<$model>(...) in the setup() of a provider: the check '
+      'runs in GraphQLProvider.boot(), after every setup().',
     );
   }
   if (policy.has(ability)) return;
@@ -222,7 +229,10 @@ void _checkAbility<M>(String annotation, String model, String ability) {
     out
       ..writeln('final $type ${object.paginator} = $type(')
       ..writeln('${literal('${object.name}Paginator')},')
-      ..writeln("description: 'A page of ${object.name} rows.',")
+      ..writeln("description: 'A page of ${object.name} rows.',");
+    // the page of a guarded type needs a login too, before the queries run
+    if (object.guard) out.writeln('guard: true,');
+    out
       ..writeln('fields: () => <$field>[')
       ..writeln(
         "$field('data', ${object.variable}.nonNull.list.nonNull, "

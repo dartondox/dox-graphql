@@ -8,9 +8,10 @@ part 'note.model.g.dart';
 
 /// Public to read, but `owner:` makes create need a login. The create
 /// sets `userId` to the logged-in user. Only @GraphQLPaginate, so the
-/// paged list is `notes`.
+/// paged list is `notes`. A note with the title `hidden` is left out of
+/// every read (`filter:`), also of the find with no `can:`.
 @DoxModel(table: 'notes')
-@GraphQLType()
+@GraphQLType(filter: Ability.view)
 @GraphQLPaginate()
 @GraphQLFind()
 @GraphQLCreate(dto: NoteDto, owner: 'userId')

@@ -68,11 +68,12 @@ class FakeAuthMiddleware implements IAuthMiddleware {
   }
 }
 
-/// Registers the policies of the app.
-void registerPolicies() {
+/// Registers the policies of the app. False [article] leaves out the
+/// policy of Article.
+void registerPolicies({bool article = true}) {
   Gate.policy<Post>(PostPolicy());
   Gate.policy<Member>(MemberPolicy());
-  Gate.policy<Article>(ArticlePolicy());
+  if (article) Gate.policy<Article>(ArticlePolicy());
   Gate.policy<Note>(NotePolicy());
   Gate.policy<Doc>(DocPolicy());
 }

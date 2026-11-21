@@ -959,6 +959,43 @@ class TitleDto {
       expect(out, isNot(matches(RegExp("\\('posts',[^,]*,guard:"))));
     });
 
+    test('the guard of the type reaches the page and the delete', () async {
+      String out = flat(
+        await _build('''
+@DoxModel(table: 'posts')
+@GraphQLType(guard: true, filter: 'view')
+@GraphQLPaginate()
+@GraphQLFind()
+@GraphQLDelete()
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+'''),
+      );
+      expect(
+        out,
+        contains(
+          flat(
+            "'PostPaginator', description: 'A page of Post rows.', "
+            'guard: true,',
+          ),
+        ),
+      );
+      expect(out, matches(RegExp("\\('deletePost',[^,]*,guard:true,")));
+      // the find with no can: still applies the filter
+      expect(
+        out,
+        contains(
+          flat(
+            "return await _filterOne<i1.Post>(info, 'view', "
+            'Future<i1.Post?>.value(model));',
+          ),
+        ),
+      );
+      expect(out, isNot(contains('_allowMissing(info,')));
+    });
+
     test('guard: goes on each operation and the type', () async {
       String out = flat(
         await _build('''

@@ -12,6 +12,13 @@
   check is in the code only when the annotation has `can:`.
 - `@GraphQLType(filter:)` writes the row filter into the lists and the
   relations to the model. A relation does not ask `viewAny` any more.
+  The find writes it too: a denied row gives null.
+- A missing id is checked as a blank row. A policy that reads a `late`
+  field of the blank row that is not set now denies. Before, the
+  request got an internal error, so a missing id gave another answer
+  than a denied id.
+- A type with `guard: true` writes `guard: true` on its paginator type
+  and on its delete mutation.
 - `@GraphQLPaginate` writes a `<Model>Paginator` type and adds the
   shared `PaginatorInfo` type of dox_graphql_orm.
 - The schema gets a start check that lists each `can:` and `filter:`

@@ -18,7 +18,12 @@
     it. `GraphQLAuth.ownerId` reads the id.
   - `@GraphQLType(filter: ability)`: the lists and the relations to the
     model drop the rows that the ability denies. A single relation gives
-    null.
+    null. `@GraphQLFind` gives null for a denied row, like for a missing
+    id. The filter does not change update and delete: they ask only
+    their `can:`. Your own resolvers do not filter.
+  - A type with `guard: true` also guards its `<Model>Paginator` and its
+    `@GraphQLDelete` (a Boolean field), so a guest gets
+    `UNAUTHENTICATED` before any query runs.
 - `@GraphQLPaginate` gives `posts(first: Int = 20, page: Int = 1)` with
   the type `PostPaginator { data, paginatorInfo }`. `PaginatorInfo` has
   `count`, `currentPage`, `firstItem`, `lastItem`, `hasMorePages`,
@@ -39,8 +44,8 @@
   middleware stops the start with a `StateError`.
 - When the app starts, `GraphQLProvider.boot()` runs the
   `GraphQLSchema.startChecks`. The generated schema checks each `can:`
-  and `filter:`: the policy of the model must have the ability, or
-  `Gate.define` must have it. Else the start stops with an error like
+  and `filter:`. When the model has a policy, the policy must have the
+  ability. A `Gate.define` counts only for a model with no policy. Else the start stops with an error like
   `@GraphQLFind(can: 'veiw') on Post: PostPolicy has no ability 'veiw'.
   Available: viewAny, view, create, update, delete.` This needs the
   dox_auth version with `Gate.policyOf` and `Gate.isDefined`.

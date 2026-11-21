@@ -1,6 +1,7 @@
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_test_app/generated/schema.g.dart';
+import 'package:dox_orm/dox_orm.dart';
 import 'package:test/test.dart';
 
 import 'db.dart';
@@ -260,6 +261,39 @@ void main() {
         expect(res['errors'], isNotEmpty, reason: m);
       }
     });
+
+    test(
+      'filter: on a find with no can: gives null, like a missing id',
+      () async {
+        Future<String> note(String title) async {
+          Map<String, dynamic> row = await QueryBuilder.table('notes')
+              .insert(<String, dynamic>{'title': title, 'user_id': 1});
+          return '${row['id']}';
+        }
+
+        String hidden = await note('hidden');
+        String shown = await note('shown');
+        Map<String, Object?> res = await run(
+          client,
+          '{ a: note(id: "$hidden") { title } b: note(id: "$shown") { title } '
+          'c: note(id: "99999") { title } notes { data { title } } }',
+          user: null,
+        );
+        expect(res, <String, Object?>{
+          'data': <String, Object?>{
+            'a': null,
+            'b': <String, Object?>{'title': 'shown'},
+            'c': null,
+            'notes': <String, Object?>{
+              'data': <Object?>[
+                <String, Object?>{'title': 'shown'},
+              ],
+            },
+          },
+        });
+        await QueryBuilder.table('notes').delete();
+      },
+    );
 
     test('only @GraphQLPaginate: the paged list has the plural name', () async {
       Map<String, Object?> res = await run(client, '{ notes { data { id } } }');

@@ -97,6 +97,44 @@ void main() {
       });
     });
 
+    test(
+      'the page of a guarded type needs a login, before any query',
+      () async {
+        startCounting();
+        Map<String, Object?> res = await run(
+          client,
+          '{ usersPaginate { paginatorInfo { total } } }',
+          user: null,
+        );
+        expect(res['data'], <String, Object?>{'usersPaginate': null});
+        expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+        expect(queries, isEmpty);
+        stopCounting();
+        res = await run(
+          client,
+          '{ usersPaginate { paginatorInfo { total } } }',
+        );
+        expect(res['data'], <String, Object?>{
+          'usersPaginate': <String, Object?>{
+            'paginatorInfo': <String, Object?>{'total': 2},
+          },
+        });
+      },
+    );
+
+    test('a guarded type guards its delete, before the lookup', () async {
+      startCounting();
+      Map<String, Object?> res = await run(
+        client,
+        'mutation { deleteMember(id: "1") }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{'deleteMember': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+      expect(queries, isEmpty);
+      stopCounting();
+    });
+
     test('model queries with no guard: are public', () async {
       Map<String, Object?> res = await run(
         client,

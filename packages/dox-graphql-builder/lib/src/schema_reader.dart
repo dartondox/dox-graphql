@@ -559,17 +559,26 @@ class SchemaReader {
     if (find != null) {
       String read = 'GraphQLOrm.find<$model>($model(), $id)';
       String? can = find.can;
-      if (can != null) {
-        functions.add('''
-/// The $name with the id, after the ${literal(can)} check. A missing id
-/// is checked as a blank $name, so a denied user gets the same error for
-/// an id that exists and one that does not.
-Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
-  $model? model = await $read;
+      if (can != null || filter != null) {
+        String check = can == null
+            ? ''
+            : '''
   await (model == null
       ? _allowMissing(info, ${literal(can)}, $model())
-      : _allow(info, ${literal(can)}, model));
-  return model;
+      : _allow(info, ${literal(can)}, model));''';
+        // a row that the filter denies gives null, like a missing id
+        String result = filter == null
+            ? 'model'
+            : 'await _filterOne<$model>(info, ${literal(filter)}, '
+                  'Future<$model?>.value(model))';
+        functions.add('''
+/// The $name with the id, after the `can:` check and the `filter:` of
+/// the type. A missing id is checked as a blank $name, so a denied user
+/// gets the same error for an id that exists and one that does not. A
+/// row that the filter denies gives null, like a missing id.
+Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await $read;$check
+  return $result;
 }
 ''');
         read = '_find$name(info)';
@@ -624,7 +633,8 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
           args: <ArgSpec>[idArg],
           resolve: '_delete$name(info)',
           where: '@GraphQLDelete on ${element.displayName}',
-          guard: delete.guard,
+          // it gives a Boolean, so the guard of the type does not reach it
+          guard: delete.guard || spec.guard,
         ),
         'Mutation',
         element,

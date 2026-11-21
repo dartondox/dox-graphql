@@ -57,8 +57,12 @@ class GraphQLType {
   /// (`@GraphQLAll`, `@GraphQLPaginate`) and the relations to this model
   /// leave out each row that `Gate.allows(user, filter, row)` denies, with
   /// no error. A single relation gives null. So a list can have fewer
-  /// rows than its limit. A hand-written resolver that gives the model
-  /// does not filter.
+  /// rows than its limit. `@GraphQLFind` gives null for a denied row, the
+  /// same answer as for a missing id.
+  ///
+  /// It does not change the writes: `@GraphQLUpdate` and `@GraphQLDelete`
+  /// ask only their `can:`. A `@GraphQLQuery` or `@GraphQLResolveField`
+  /// that gives the model does not filter: call `Gate` in it.
   final String? filter;
 }
 
