@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Fix: `GraphQLOrm.relation` gives null for a relation with no related
+  row when the model field is `late` and not nullable. Before, the
+  client got an internal server error.
 - New: `GraphQLOrm.many` loads a list relation with
   `LIMIT maxRelationRows + 1`. The limit is `GraphQLConfig.maxRelationRows`
   (50,000 by default) for all parents at one level. A batch with more

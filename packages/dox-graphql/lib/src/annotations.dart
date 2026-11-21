@@ -49,7 +49,9 @@ class GraphQLType {
   final bool? auth;
 
   /// Models only: a `Policy` of dox_auth for the model, like `PostPolicy`.
-  /// With it and [dto], the model gets the update and delete mutations.
+  /// It works without [dto] too: the model then has the guarded reads and
+  /// no mutations. With it and [dto], the model gets the update and delete
+  /// mutations.
   /// They load the row and ask the policy (`update`, `delete`) before
   /// they write. A denied write fails with "Forbidden" (code
   /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
@@ -73,8 +75,8 @@ class GraphQLType {
   /// Models only: the column of the owner, like `'userId'`. The create
   /// mutation sets it to the id of the logged-in user, so a client can
   /// not send or change it. It is not in the input, and the update
-  /// mutation never changes it. Create then always needs a login, even
-  /// with `auth: false`. It needs [dto], and the column must not be a
+  /// mutation never changes it. Create, update and delete then always
+  /// need a login, even with `auth: false`. It needs [dto], and the column must not be a
   /// field of the DTO.
   ///
   /// ```dart

@@ -136,7 +136,7 @@ void main() {
         client,
         '{ posts(limit: 101) { title } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'posts': null});
       expect(
         ((res['errors'] as List<Object?>).single
             as Map<String, Object?>)['message'],
@@ -167,7 +167,7 @@ void main() {
         client,
         'mutation { createPost(input: {title: "No"}) { id } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createPost': null});
       expect(_fields(res), <String, Object?>{
         'title': 'The title is too short',
       });

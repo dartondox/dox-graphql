@@ -151,11 +151,7 @@ class SchemaReader {
     DartType? dto = type.getField('dto')?.toTypeValue();
     DartType? policy = type.getField('policy')?.toTypeValue();
     if (model == null && policy != null) {
-      _fail(
-        where,
-        '`policy:` works only on a model of dox_orm with `dto:`.',
-        element,
-      );
+      _fail(where, '`policy:` works only on a model of dox_orm.', element);
     }
     if (model == null && dto != null) {
       _fail(
@@ -198,14 +194,6 @@ class SchemaReader {
       spec.dto = dtoElement;
     }
     if (policy != null) {
-      if (dto == null) {
-        _fail(
-          where,
-          '`policy:` needs `dto:`: the policy guards the update and delete '
-          'mutations, and they come from the DTO.',
-          element,
-        );
-      }
       InterfaceType? base = _policyOf(policy, element);
       if (base == null) {
         _fail(
@@ -368,6 +356,7 @@ class SchemaReader {
         dartName,
         field.type,
         field,
+        relation: true,
         resolve: _relation(field, model),
         // the name toJson() gives a relation, so `hidden` can name it
         column: snakeCase(dartName),
@@ -598,6 +587,9 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
     }
     String key = camelCase(spec.primaryKey);
     String? owner = spec.owner;
+    // A model with an owner is written by a logged-in user only. The login
+    // check runs before the resolver, so a guest never reaches the lookup.
+    bool? ownerAuth = owner != null ? true : spec.auth;
     String ownerSet = owner == null
         ? ''
         : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
@@ -625,7 +617,7 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allowCr
         where: hint,
         auto: true,
         // the owner is the logged-in user, so there must be one
-        auth: owner != null ? true : spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -684,7 +676,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         resolve: '_update$name(info)',
         where: hint,
         auto: true,
-        auth: spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -698,7 +690,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         resolve: '_delete$name(info)',
         where: hint,
         auto: true,
-        auth: spec.auth,
+        auth: ownerAuth,
       ),
       'Mutation',
       element,
@@ -770,12 +762,19 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     Element annotated, {
     String? resolve,
     String? column,
+    bool relation = false,
   }) {
     String where = '${spec.element.displayName}.$dartName';
     DartObject? field = annotation(annotated, 'GraphQLField');
     String name = _string(field, 'name') ?? dartName;
     _checkName(name, where, member);
     String gql = _outputType(_unwrapFuture(type), where, member);
+    bool? fieldAuth = field?.getField('auth')?.toBoolValue();
+    // A relation can fail on its own (a policy, a login, the row cap, a
+    // database error), so it is always nullable. Another field is nullable
+    // when it can be refused. A non-null field would null the parent. List
+    // items stay non-null: a policy drops a row, it does not null it.
+    if (relation || _mayRefuse(type, fieldAuth)) gql = _nullable(gql);
     _addField(
       spec.fields,
       FieldSpec(
@@ -785,12 +784,34 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
-        auth: field?.getField('auth')?.toBoolValue(),
+        auth: fieldAuth,
         column: column,
       ),
       spec.name,
       member,
     );
+  }
+
+  /// True when a field can be refused at run time, so it must be nullable.
+  /// That is true for `auth: true` on the field, and for a field that
+  /// gives a registered type that can refuse. The type decides first, like
+  /// `GraphQLAuth.needsLogin`: a `policy:` or `auth: true` on the type
+  /// refuses, and `auth: false` on the type (with no policy) is public
+  /// unless the field has `auth: true`. Else the `auth:` of the field
+  /// decides. With no `auth:` on both, the app default applies (a login
+  /// when the app has an auth middleware). It is not known here, so the
+  /// field may refuse.
+  bool _mayRefuse(DartType type, bool? fieldAuth) {
+    if (fieldAuth == true) return true;
+    DartType related = _unwrapFuture(type);
+    if (related is InterfaceType && related.isDartCoreList) {
+      related = related.typeArguments.first;
+    }
+    Element? element = related is InterfaceType ? related.element : null;
+    ObjectSpec? target = objects[element];
+    if (target == null) return false;
+    if (target.policy || target.auth == true) return true;
+    return fieldAuth ?? target.auth != false;
   }
 
   // ---------------------------------------------------------------------
@@ -933,6 +954,9 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
 
     DartType returnType = _unwrapFuture(method.returnType);
     String type = _outputType(returnType, where, method);
+    bool? methodAuth = ann.getField('auth')?.toBoolValue();
+    // a root field is made nullable in _addField
+    if (_mayRefuse(returnType, methodAuth)) type = _nullable(type);
     FieldSpec field = FieldSpec(
       name: name,
       type: type,
@@ -940,7 +964,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
       where: where,
       description: _string(ann, 'description') ?? docOf(method),
       deprecationReason: _string(ann, 'deprecationReason'),
-      auth: ann.getField('auth')?.toBoolValue(),
+      auth: methodAuth,
       args: args,
       isAsync: isAsync,
     );
@@ -1246,7 +1270,20 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         );
       }
     }
+    // A root field is always nullable: an error (login, policy, DTO,
+    // database) then nulls only this field, not all of `data`.
+    if (identical(fields, query) || identical(fields, mutation)) {
+      field.type = _nullable(field.type);
+    }
     fields.add(field);
+  }
+
+  /// [type] without its outer `.nonNull`. List items stay non-null.
+  static String _nullable(String type) {
+    const String suffix = '.nonNull';
+    return type.endsWith(suffix)
+        ? type.substring(0, type.length - suffix.length)
+        : type;
   }
 
   void _claimTypeName(String name, String where, Element element) {

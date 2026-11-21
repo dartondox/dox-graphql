@@ -132,7 +132,8 @@ void main() {
         client,
         'mutation { createBook(input: {title: "No", authorId: 1}) { id } }',
       );
-      expect(res['data'], null);
+      // the type may refuse, so only the field is null
+      expect(res['data'], <String, Object?>{'createBook': null});
       expect(res['errors'], <Object?>[
         <String, Object?>{
           'message': 'Validation failed',

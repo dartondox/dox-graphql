@@ -84,7 +84,7 @@ void main() {
         'mutation { deleteMember(id: "2") }',
         user: null,
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'deleteMember': null});
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
       res = await run(client, '{ member(id: "2") { name } }');
       expect(res['data'], <String, Object?>{
@@ -128,6 +128,40 @@ void main() {
       });
     });
 
+    test('a guest keeps the sibling fields of a refused relation', () async {
+      // Comment needs a login by default: only `comments` is null
+      Map<String, Object?> res = await run(
+        client,
+        '{ post(id: "1") { title comments { id } } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{
+        'post': <String, Object?>{'title': 'Hello GraphQL', 'comments': null},
+      });
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
+    test('a guest keeps a public root field next to an auto list', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ path users { id } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{'path': '/graphql', 'users': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
+    test('a refused root field is null, the other root fields stay', () async {
+      // `books` gives a type that needs a login by default
+      Map<String, Object?> res = await run(
+        client,
+        '{ path books { id } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{'path': '/graphql', 'books': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
     test('a request that does not need the user runs no login', () async {
       FakeAuthMiddleware.runs = 0;
       await run(client, '{ path article(id: "1") { title } }');
@@ -163,7 +197,7 @@ void main() {
         'mutation { deletePost(id: "2") }',
         user: 'intruder',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'deletePost': null});
       expect(_codes(res), <Object?>['FORBIDDEN']);
       res = await run(client, '{ post(id: "2") { title } }', user: null);
       expect(res['data'], <String, Object?>{
@@ -177,7 +211,7 @@ void main() {
         client,
         'mutation { createNote(input: {title: "x"}) { id } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createNote': null});
       expect(
         ((res['errors'] as List<Object?>).single
             as Map<String, Object?>)['message'],

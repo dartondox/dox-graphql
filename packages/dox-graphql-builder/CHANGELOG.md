@@ -1,5 +1,20 @@
 ## Unreleased
 
+- Fix: a schema field is nullable when an error can hit it. Before, a
+  refused field made the whole parent (or all of `data`) null. Now only
+  that field is null. List items stay non-null: a refused row is
+  dropped. The rule:
+  - Each root field (`Query` and `Mutation`, automatic or your own) is
+    nullable, with any type.
+  - Each relation is nullable.
+  - Another field (a plain class field, a getter, a `@ResolveField`) is
+    nullable when it has `auth: true`, or gives a type that can refuse.
+    A type can refuse when it has a `policy:` or `auth: true`, or has no
+    `auth:`. The type decides first.
+- Fix: the update and delete mutations of a model with `owner:` need a
+  login, like create. A guest gets `UNAUTHENTICATED` before the lookup.
+- `policy:` now works without `dto:`. The model has the guarded reads
+  and no mutations.
 - A policy that lists `viewAny`, `view` or `create` now guards the
   reads and the create. The list query asks `viewAny` before the query.
   The find query asks `view` on the row. The list query and the

@@ -155,12 +155,26 @@ void main() {
       Map<String, Object?> res = await send(
         'mutation { createNote(input: {title: "Guest"}) { id } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createNote': null});
       expect(code(res), 'UNAUTHENTICATED');
       expect(await count(), before);
       // reading stays public
       Map<String, Object?> list = await send('{ notes { id } }');
       expect(list['errors'], isNull);
+    });
+
+    test('a guest update and delete stop before the row lookup', () async {
+      for (String id in <String>['1', '99999']) {
+        startCounting();
+        for (String m in <String>[
+          'updateNote(id: "$id", input: {title: "x"}) { id }',
+          'deleteNote(id: "$id")',
+        ]) {
+          Map<String, Object?> res = await send('mutation { $m }');
+          expect(code(res), 'UNAUTHENTICATED', reason: m);
+        }
+        expect(queries.where((String q) => q.contains('notes')), isEmpty);
+      }
     });
 
     test('update does not change the owner', () async {

@@ -43,7 +43,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
     fields: () => <Field<Object?, DoxGraphQLContext>>[
       AutoField<Object?, DoxGraphQLContext>(
         'accounts',
-        _tAccount.nonNull.list.nonNull,
+        _tAccount.nonNull.list,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
           Argument('offset', graphqlInt, defaultValue: '0'),
@@ -63,7 +63,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'articles',
-        _tArticle.nonNull.list.nonNull,
+        _tArticle.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -87,7 +87,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'docs',
-        _tDoc.nonNull.list.nonNull,
+        _tDoc.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -111,7 +111,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'members',
-        _tMember.nonNull.list.nonNull,
+        _tMember.nonNull.list,
         auth: true,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -135,7 +135,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'notes',
-        _tNote.nonNull.list.nonNull,
+        _tNote.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -159,7 +159,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'posts',
-        _tPost.nonNull.list.nonNull,
+        _tPost.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -183,7 +183,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'users',
-        _tUser.nonNull.list.nonNull,
+        _tUser.nonNull.list,
         auth: true,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -205,7 +205,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'books',
-        _tBook.nonNull.list.nonNull,
+        _tBook.nonNull.list,
         description: 'The latest books.',
         args: <Argument>[
           Argument('limit', graphqlInt.nonNull, defaultValue: '20'),
@@ -237,7 +237,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'rowSums',
-        graphqlInt.nonNull.list.nonNull,
+        graphqlInt.nonNull.list,
         description: 'The sum of each row.',
         args: <Argument>[
           Argument('rows', graphqlInt.nonNull.list.nonNull.list.nonNull),
@@ -260,7 +260,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'path',
-        graphqlString.nonNull,
+        graphqlString,
         description:
             'The path of the request. Public, even with the auth middleware.',
         auth: false,
@@ -269,7 +269,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'postsWithUsers',
-        _tPost.nonNull.list.nonNull,
+        _tPost.nonNull.list,
         description: 'The posts, with their users preloaded.',
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             i23.PostResolver(info.context.make<i22.PostService>())
@@ -282,7 +282,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
     fields: () => <Field<Object?, DoxGraphQLContext>>[
       AutoField<Object?, DoxGraphQLContext>(
         'createArticle',
-        _tArticle.nonNull,
+        _tArticle,
         auth: false,
         args: <Argument>[Argument('input', _iCreateArticleInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -301,7 +301,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteArticle',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -309,7 +309,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createDoc',
-        _tDoc.nonNull,
+        _tDoc,
         auth: false,
         args: <Argument>[Argument('input', _iCreateDocInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -328,7 +328,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteDoc',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -336,7 +336,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createMember',
-        _tMember.nonNull,
+        _tMember,
         auth: true,
         args: <Argument>[Argument('input', _iCreateMemberInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -355,7 +355,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteMember',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -363,7 +363,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createNote',
-        _tNote.nonNull,
+        _tNote,
         auth: true,
         args: <Argument>[Argument('input', _iCreateNoteInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -372,7 +372,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       AutoField<Object?, DoxGraphQLContext>(
         'updateNote',
         _tNote,
-        auth: false,
+        auth: true,
         args: <Argument>[
           Argument('id', graphqlId.nonNull),
           Argument('input', _iUpdateNoteInput.nonNull),
@@ -382,15 +382,15 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteNote',
-        graphqlBoolean.nonNull,
-        auth: false,
+        graphqlBoolean,
+        auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             _deleteNote(info),
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createPost',
-        _tPost.nonNull,
+        _tPost,
         auth: false,
         args: <Argument>[Argument('input', _iCreatePostInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -409,7 +409,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deletePost',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -417,7 +417,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'createBook',
-        _tBook.nonNull,
+        _tBook,
         args: <Argument>[Argument('input', _iCreateBookInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) async =>
             i19.BookResolver(
@@ -723,12 +723,12 @@ _tDoc = ObjectType<i5.Doc, DoxGraphQLContext>(
         Field<i5.Doc, DoxGraphQLContext>(
           'parent',
           _tDoc,
-          description: 'A single relation to a model whose policy has `view`.',
+          description: 'A single relation to a model whose policy has `view`. It is not\nnullable in Dart: only the field can be null, not the parent.',
           resolve: (i5.Doc s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i5.Doc>(info, 'viewAny').then(
                 (_) => _viewOne<i5.Doc>(
                   info,
-                  GraphQLOrm.relation<i5.Doc, i5.Doc?>(
+                  GraphQLOrm.relation<i5.Doc, i5.Doc>(
                     s,
                     'parent',
                     info.context,
@@ -943,7 +943,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('comments'))
             Field<i9.Post, DoxGraphQLContext>(
               'comments',
-              _tComment.nonNull.list.nonNull,
+              _tComment.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i4.Comment>(
                     s,
@@ -955,7 +955,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('tags'))
             Field<i9.Post, DoxGraphQLContext>(
               'tags',
-              _tTag.nonNull.list.nonNull,
+              _tTag.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i11.Tag>(
                     s,
@@ -968,7 +968,7 @@ final ObjectType<i9.Post, DoxGraphQLContext> _tPost =
           if (show('images'))
             Field<i9.Post, DoxGraphQLContext>(
               'images',
-              _tImage.nonNull.list.nonNull,
+              _tImage.nonNull.list,
               resolve: (i9.Post s, ResolveInfo<DoxGraphQLContext> info) =>
                   GraphQLOrm.many<i9.Post, i6.Image>(
                     s,
@@ -1034,6 +1034,7 @@ final ObjectType<i10.Profile, DoxGraphQLContext> _tProfile =
 final ObjectType<i11.Tag, DoxGraphQLContext> _tTag =
     ObjectType<i11.Tag, DoxGraphQLContext>(
       'Tag',
+      auth: false,
       fields: () {
         i11.Tag model = i11.Tag();
         List<String> hidden = model.hidden;
@@ -1093,7 +1094,7 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
       if (show('posts'))
         Field<i12.User, DoxGraphQLContext>(
           'posts',
-          _tPost.nonNull.list.nonNull,
+          _tPost.nonNull.list,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i9.Post>(info, 'viewAny').then(
                 (_) => _viewList<i9.Post>(
@@ -1122,7 +1123,7 @@ _tUser = ObjectType<i12.User, DoxGraphQLContext>(
       if (show('articles'))
         Field<i12.User, DoxGraphQLContext>(
           'articles',
-          _tArticle.nonNull.list.nonNull,
+          _tArticle.nonNull.list,
           resolve: (i12.User s, ResolveInfo<DoxGraphQLContext> info) =>
               _allowIf<i3.Article>(info, 'viewAny').then(
                 (_) => _viewList<i3.Article>(
@@ -1627,7 +1628,6 @@ Future<bool> _deleteMember(ResolveInfo<DoxGraphQLContext> info) async {
 /// denies gets the same error for an id that exists and one that does not.
 Future<i8.Note?> _findNote(ResolveInfo<DoxGraphQLContext> info) async {
   bool view = Gate.hasAbility<i8.Note>('view');
-  if (view) await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),
@@ -1656,7 +1656,6 @@ Future<i8.Note> _createNote(ResolveInfo<DoxGraphQLContext> info) async {
 /// Sets the fields the client sent on a Note. Null when there is no
 /// Note with that id and the policy allows the update of a blank one.
 Future<i8.Note?> _updateNote(ResolveInfo<DoxGraphQLContext> info) async {
-  await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),
@@ -1686,7 +1685,6 @@ Future<i8.Note?> _updateNote(ResolveInfo<DoxGraphQLContext> info) async {
 /// Deletes a Note. False when there is no Note with that id and the
 /// policy allows the delete of a blank one.
 Future<bool> _deleteNote(ResolveInfo<DoxGraphQLContext> info) async {
-  await _login(info);
   i8.Note? model = await GraphQLOrm.find<i8.Note>(
     i8.Note(),
     int.tryParse(info.args.get<String>('id')!),

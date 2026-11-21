@@ -72,7 +72,10 @@ void main() {
       client,
       '{ post(id: "$big") { title comments { id } } }',
     );
-    expect(res['data'], <String, Object?>{'post': null});
+    // only the relation is null: the parent keeps its other fields
+    expect(res['data'], <String, Object?>{
+      'post': <String, Object?>{'title': 'big', 'comments': null},
+    });
     List<Object?> errors = res['errors'] as List<Object?>;
     expect(
       (errors.single as Map<String, Object?>)['message'],
@@ -83,12 +86,16 @@ void main() {
     expect(sql.toUpperCase(), contains(' LIMIT '));
   });
 
+  // Tag has `auth: false` and no policy: it never refuses, but the cap can
+  // still fail the relation, so the field is nullable
   test('ManyToMany over the cap is an error', () async {
     Map<String, Object?> res = await run(
       client,
       '{ post(id: "$big") { tags { name } } }',
     );
-    expect(res['data'], <String, Object?>{'post': null});
+    expect(res['data'], <String, Object?>{
+      'post': <String, Object?>{'tags': null},
+    });
     List<Object?> errors = res['errors'] as List<Object?>;
     expect(
       (errors.single as Map<String, Object?>)['message'],

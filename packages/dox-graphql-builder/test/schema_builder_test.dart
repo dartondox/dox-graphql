@@ -236,8 +236,142 @@ class Post {
 }
 '''),
       );
-      expect(out, contains(flat("'posts', _tPost.nonNull.list.nonNull")));
+      // no `auth:` on Post: the app default may need a login, so the field
+      // may be refused and is nullable (the items are not)
+      expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
       expect(out, contains(flat("'author', _tUser,")));
+    });
+
+    test('a resolver that gives a type that can refuse is nullable', () async {
+      String out = flat(
+        await _build('''
+@GraphQLType(auth: true)
+class Secret {
+  final String name = '';
+}
+
+@GraphQLType(auth: false)
+class Open {
+  final String name = '';
+}
+
+@GraphQLType()
+class Page {
+  final String title = '';
+}
+
+class PageResolver {
+  @GraphQLQuery()
+  Secret secret() => Secret();
+  @GraphQLQuery()
+  List<Secret> secrets() => <Secret>[];
+  @GraphQLQuery()
+  Open open() => Open();
+  @GraphQLQuery(auth: true)
+  Open locked() => Open();
+  @GraphQLMutation()
+  Page makePage() => Page();
+  @ResolveField()
+  Secret secretOf(Page page) => Secret();
+  @ResolveField()
+  Open openOf(Page page) => Open();
+}
+'''),
+      );
+      for (String name in <String>[
+        'secret',
+        'locked',
+        'makePage',
+        'secretOf',
+      ]) {
+        expect(out, matches(RegExp("\\('$name',_t\\w+,")), reason: name);
+      }
+      expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
+      // a root field is always nullable, a @ResolveField only when it may
+      // refuse
+      expect(out, matches(RegExp("\\('open',_tOpen,")));
+      expect(out, contains(flat("'openOf', _tOpen.nonNull,")));
+    });
+
+    test(
+      'every root field is nullable, a scalar with auth: true too',
+      () async {
+        String out = flat(
+          await _build('''
+$_hello
+class R {
+  @GraphQLQuery()
+  int count() => 1;
+  @GraphQLQuery(auth: true)
+  String me() => 'x';
+  @GraphQLMutation()
+  bool flip() => true;
+  @GraphQLQuery()
+  List<String> names() => <String>[];
+}
+
+@GraphQLType(auth: false)
+class Page {
+  final String title = '';
+  final String plain = '';
+  @GraphQLField(auth: true)
+  String get secret => 's';
+}
+'''),
+        );
+        expect(out, matches(RegExp("\\('count',graphqlInt,")));
+        expect(out, matches(RegExp("\\('me',graphqlString,")));
+        expect(out, matches(RegExp("\\('flip',graphqlBoolean,")));
+        expect(out, contains(flat("'names', graphqlString.nonNull.list,")));
+        // a scalar that needs a login can be refused: nullable
+        expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+        // a scalar that needs no login stays non-null
+        expect(out, contains(flat("'plain', graphqlString.nonNull,")));
+      },
+    );
+
+    test('a field or getter that gives a type that can refuse is '
+        'nullable', () async {
+      String out = flat(
+        await _build('''
+$_hello
+@GraphQLType(auth: true)
+class Secret {
+  final String name = '';
+}
+
+@GraphQLType(auth: false)
+class Open {
+  final String name = '';
+}
+
+@GraphQLType()
+class Page {
+  final Secret secret = Secret();
+  final List<Secret> secrets = <Secret>[];
+  final Open open = Open();
+  final List<Open> opens = <Open>[];
+
+  @GraphQLField()
+  Secret get viaGetter => Secret();
+
+  @GraphQLField()
+  Open get openGetter => Open();
+
+  @GraphQLField(auth: true)
+  Open get lockedGetter => Open();
+}
+'''),
+      );
+      // a guest gets UNAUTHENTICATED on these: only the field is null
+      expect(out, contains(flat("'secret', _tSecret,")));
+      expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
+      expect(out, contains(flat("'viaGetter', _tSecret,")));
+      expect(out, contains(flat("'lockedGetter', _tOpen, auth: true,")));
+      // a public type never refuses
+      expect(out, contains(flat("'open', _tOpen.nonNull,")));
+      expect(out, contains(flat("'opens', _tOpen.nonNull.list.nonNull,")));
+      expect(out, contains(flat("'openGetter', _tOpen.nonNull,")));
     });
   });
 
@@ -277,7 +411,7 @@ class PostResolver {
         contains(
           flat(
             "Field<Object?, DoxGraphQLContext>('posts', "
-            "graphqlString.nonNull.list.nonNull, description: 'The posts.', "
+            "graphqlString.nonNull.list, description: 'The posts.', "
             'args: <Argument>['
             "Argument('id', graphqlInt.nonNull),"
             "Argument('limit', graphqlInt.nonNull, defaultValue: '10'),"
@@ -325,9 +459,7 @@ class R {
       );
       expect(
         out,
-        contains(
-          flat("'greeting', graphqlString.nonNull, description: 'Says hi.',"),
-        ),
+        contains(flat("'greeting', graphqlString, description: 'Says hi.',")),
       );
       expect(out, isNot(contains('mutation:')));
     });
@@ -754,16 +886,10 @@ class BookResolver {
 }
 '''),
       );
-      expect(
-        out,
-        contains(flat("'open', graphqlString.nonNull, auth: false,")),
-      );
-      expect(out, contains(flat("'plain', graphqlString.nonNull, resolve:")));
-      expect(out, contains(flat("'write', graphqlInt.nonNull, auth: true,")));
-      expect(
-        out,
-        contains(flat("'secret', graphqlString.nonNull, auth: true,")),
-      );
+      expect(out, contains(flat("'open', graphqlString, auth: false,")));
+      expect(out, contains(flat("'plain', graphqlString, resolve:")));
+      expect(out, contains(flat("'write', graphqlInt, auth: true,")));
+      expect(out, contains(flat("'secret', graphqlString, auth: true,")));
     });
   });
 }

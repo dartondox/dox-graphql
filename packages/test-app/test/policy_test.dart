@@ -44,7 +44,7 @@ void main() {
       expect(res['errors'], isNull);
       startCounting();
       res = await run(client, '{ docs { title } }', user: 'blind');
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'docs': null});
       expect(_codes(res), <Object?>['FORBIDDEN']);
       expect(queries, isEmpty);
       res = await run(client, '{ docs { title } }', user: null);
@@ -98,6 +98,22 @@ void main() {
         },
       });
       expect(res.toString(), isNot(contains('Bob doc')));
+    });
+
+    test('a relation with no row is null, with no error', () async {
+      // Bob doc has no parent, and `parent` is a `late` field
+      Map<String, Object?> res = await run(
+        client,
+        '{ docs { title parent { title } } }',
+        user: 'bob',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
+          'docs': <Object?>[
+            <String, Object?>{'title': 'Bob doc', 'parent': null},
+          ],
+        },
+      });
     });
 
     test('view works through a HasOne relation too', () async {
@@ -201,7 +217,7 @@ void main() {
         'mutation { createDoc(input: {title: "Mine"}) { id } }',
         user: 'intruder',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createDoc': null});
       expect(_codes(res), <Object?>['FORBIDDEN']);
       expect(await count(), before);
     });
@@ -236,7 +252,7 @@ void main() {
           'mutation { deleteDoc(id: "$id") }',
           user: null,
         );
-        expect(res['data'], isNull, reason: id);
+        expect(res['data'], <String, Object?>{'deleteDoc': null}, reason: id);
         expect(_codes(res), <Object?>['UNAUTHENTICATED'], reason: id);
       }
       expect(queries, isEmpty);

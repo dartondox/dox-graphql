@@ -42,7 +42,22 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
 - `createPost` comes from `dto:`. `updatePost` and `deletePost` exist only
   with `policy:`.
 - `owner: 'userId'` makes `createPost` set `userId` to the logged-in
-  user. Create then needs a login.
+  user. Create, update and delete then need a login. A guest gets
+  `UNAUTHENTICATED` before any database read.
+- `policy:` also works without `dto:`. The model then has the guarded
+  reads and no mutations.
+- A schema field is nullable when an error can hit it. Then an error
+  nulls only that field, and the parent (or `data`) keeps its other
+  fields. The rule:
+  - Each root field (`Query` and `Mutation`, automatic or your own) is
+    nullable, with any type.
+  - Each relation is nullable. It can fail on a policy, a login, the row
+    cap or a database error.
+  - Another field (a plain class field, a getter, a `@ResolveField`) is
+    nullable when it has `auth: true`, or gives a type that can refuse.
+    A type can refuse when it has a `policy:` or `auth: true`, or has no
+    `auth:` (the app default can need a login). The type decides first.
+  - List items stay non-null: a policy drops a row.
 - The policy can also guard the reads and the create. GraphQL asks Gate
   at run time which abilities the registered policy lists in
   `abilities`. The keys must be `viewAny`, `view` and `create`. The

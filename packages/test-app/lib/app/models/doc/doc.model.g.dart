@@ -59,7 +59,9 @@ class DocGenerator extends Model<Doc> {
   static Future<void> getParent(List<Model<Doc>> list) async {
     var result = await getBelongsTo<Doc, Doc>(queryParent(list), list);
     for (dynamic i in list) {
-      i.parent = result[i.tempIdValue.toString()];
+      if (result[i.tempIdValue.toString()] != null) {
+        i.parent = result[i.tempIdValue.toString()]!;
+      }
     }
   }
 
