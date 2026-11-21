@@ -71,7 +71,103 @@ List<Object?> paths(Map<String, Object?> r) => <Object?>[
     (e as Map<String, Object?>)['path'],
 ];
 
+Future<int> failAfter(int ms) => Future<int>.delayed(
+  Duration(milliseconds: ms),
+  () => throw StateError('late'),
+);
+
+final ObjectType<Object?, Object?> deep = ObjectType<Object?, Object?>(
+  'Deep',
+  fields: () => <Field<Object?, Object?>>[
+    field('a', deep, () => 0),
+    field(
+      'slow',
+      graphqlInt,
+      () => Future<int>.delayed(const Duration(milliseconds: 20), () => 1),
+    ),
+    field('b', graphqlInt, () => 1),
+    field(
+      'must',
+      graphqlInt.nonNull,
+      () => Future<int>.microtask(() => throw StateError('must')),
+    ),
+    field(
+      'big',
+      graphqlInt.list,
+      () => Future<List<int>>.delayed(
+        const Duration(milliseconds: 1),
+        () => List<int>.filled(50, 1),
+      ),
+    ),
+  ],
+);
+
+GraphQLExecutor<Object?> limited({int maxNodes = 100000, int maxDepth = 64}) {
+  return GraphQLExecutor<Object?>(
+    GraphQLSchema<Object?>(
+      query: ObjectType<Object?, Object?>(
+        'Query',
+        fields: () => <Field<Object?, Object?>>[
+          field('deep', deep, () => 0),
+          field(
+            'failing',
+            graphqlInt.list,
+            () => <Object?>[for (int i = 0; i < 10; i++) failAfter(2)],
+          ),
+        ],
+      ),
+    ),
+    maxNodes: maxNodes,
+    maxDepth: maxDepth,
+  );
+}
+
+List<String> messagesOf(GraphQLResponse r) => <String>[
+  for (GraphQLError e in r.errors) e.message,
+];
+
 void main() {
+  group('a stopped request', () {
+    test('items that are futures give no unhandled error', () async {
+      List<Object> unhandled = <Object>[];
+      late GraphQLResponse r;
+      await runZonedGuarded(() async {
+        r = await limited(maxNodes: 5)
+            .execute(const GraphQLRequest('{ failing }'), context: null);
+        // the items fail after the response is made
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }, (Object e, StackTrace _) => unhandled.add(e));
+      expect(messagesOf(r).single, contains('too much data'));
+      expect(unhandled, isEmpty);
+    });
+
+    test('a null that bubbles up does not hide the stop', () async {
+      // `must` fails first, so `a` is null at once. Then `big` passes
+      // maxNodes, while the request still waits for `slow`.
+      GraphQLResponse r = await limited(maxNodes: 20).execute(
+        const GraphQLRequest('{ deep { a { must big } slow } }'),
+        context: null,
+      );
+      expect(r.data, isNull);
+      expect(messagesOf(r).last, contains('too much data'));
+    });
+
+    test('a stack overflow is "nested too deep", not a field error', () async {
+      const int depth = 2000;
+      GraphQLResponse r = await limited(maxDepth: 1000000, maxNodes: 10000000)
+          .execute(
+            GraphQLRequest('{ deep { ${'a { ' * depth}b${' }' * depth} } }'),
+            context: null,
+          );
+      // Deep enough here, or the query ran: both are right. A field error
+      // with part of the data is not.
+      if (r.errors.isNotEmpty) {
+        expect(r.hasData, isFalse);
+        expect(messagesOf(r).single, contains('nested too deep'));
+      }
+    });
+  });
+
   test('fields keep the query order when some wait', () async {
     Map<String, Object?> r = await run('{ box { a b c inner { c b a } } }');
     Map<String, Object?> data =

@@ -377,6 +377,11 @@ final class _Execution {
     } on _Stop catch (stop) {
       return GraphQLResponse(errors: <GraphQLError>[...errors, stop.error]);
     }
+    // A null that bubbled up can come before the stop and hide it.
+    _Stop? stop = _stopped;
+    if (stop != null) {
+      return GraphQLResponse(errors: <GraphQLError>[...errors, stop.error]);
+    }
     if (_tooManyErrors) {
       errors.add(
         GraphQLError(
@@ -525,7 +530,8 @@ final class _Execution {
       } on _NullBubble catch (b) {
         bubble = b;
         continue;
-      } on _Stop {
+      } catch (_) {
+        // A stop or a stack overflow: the request ends here.
         _ignore(pending);
         rethrow;
       }
@@ -600,6 +606,8 @@ final class _Execution {
           : done;
     } on _Stop {
       rethrow;
+    } on StackOverflowError {
+      rethrow;
     } on _NullBubble {
       if (def.type is NonNullType) rethrow;
       return null;
@@ -648,6 +656,8 @@ final class _Execution {
     try {
       return await value;
     } on _Stop {
+      rethrow;
+    } on StackOverflowError {
       rethrow;
     } on _NullBubble {
       if (type is NonNullType) rethrow;
@@ -772,22 +782,29 @@ final class _Execution {
     ResponsePath path,
     List<Object?> items,
   ) {
-    _spend(items.length);
+    try {
+      _spend(items.length);
+    } on _Stop {
+      _ignoreItems(items, 0);
+      rethrow;
+    }
     List<Object?> out = List<Object?>.filled(items.length, null);
     List<Future<void>>? pending;
     // A non-null item failed at once. The other items still run, so
     // their errors are kept. Then the list fails.
     _NullBubble? bubble;
     for (int i = 0; i < items.length; i++) {
-      _checkStarted(pending);
       Object? value;
       try {
+        _checkStarted(pending);
         value = _item(type, parent, nodes, path.index(i), items[i]);
       } on _NullBubble catch (b) {
         bubble = b;
         continue;
-      } on _Stop {
+      } catch (_) {
+        // A stop or a stack overflow: the request ends here.
         _ignore(pending);
+        _ignoreItems(items, i);
         rethrow;
       }
       if (value is Future<Object?>) {
@@ -811,6 +828,15 @@ final class _Execution {
     });
   }
 
+  /// The items from [start] that are futures were not started, so nothing
+  /// listens to them. Their errors are ignored.
+  static void _ignoreItems(List<Object?> items, int start) {
+    for (int i = start; i < items.length; i++) {
+      Object? item = items[i];
+      if (item is Future<Object?>) item.ignore();
+    }
+  }
+
   FutureOr<Object?> _item(
     GraphQLTypeRef type,
     ObjectType<Object?, Object?> parent,
@@ -825,6 +851,8 @@ final class _Execution {
           ? _settle(value, type, nodes, path)
           : value;
     } on _Stop {
+      rethrow;
+    } on StackOverflowError {
       rethrow;
     } on _NullBubble {
       if (type is NonNullType) rethrow;
