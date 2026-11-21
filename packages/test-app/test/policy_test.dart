@@ -220,16 +220,19 @@ void main() {
       expect(await count(), before);
     });
 
-    test('an allowed user saves it; the filter hides the result', () async {
+    test('an allowed user saves it and gets it back', () async {
       int before = await count();
       Map<String, Object?> res = await run(
         client,
         'mutation { createDoc(input: {title: "New"}) { title } }',
         user: 'ann',
       );
-      // the new doc has no owner, so `filter: view` denies it to ann
+      // the new doc has no owner, so `filter: view` would deny it to
+      // ann, but the result of a create is not filtered
       expect(res, <String, Object?>{
-        'data': <String, Object?>{'createDoc': null},
+        'data': <String, Object?>{
+          'createDoc': <String, Object?>{'title': 'New'},
+        },
       });
       expect(await count(), before + 1);
     });
