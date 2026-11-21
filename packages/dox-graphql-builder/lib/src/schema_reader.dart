@@ -4,6 +4,7 @@ import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:build/build.dart' show log;
 import 'package:dox_builder/dox_builder.dart';
 import 'package:source_gen/source_gen.dart';
 
@@ -69,9 +70,16 @@ class SchemaReader {
   /// dox_graphql_orm.
   bool get hasModels => objects.values.any((ObjectSpec o) => o.orm);
 
-  /// True when a model has `policy:`: the code then uses `Gate` of
-  /// dox_auth.
-  bool hasPolicies = false;
+  /// True when a `can:` or `filter:` is used: the code then uses `Gate`
+  /// of dox_auth.
+  bool usesGate = false;
+
+  /// Each ability of a `can:` or `filter:`, for the start check.
+  final List<AbilityCheck> abilityChecks = <AbilityCheck>[];
+
+  /// The models with `@GraphQLPaginate`: each gets a `<Name>Paginator`
+  /// type.
+  final List<ObjectSpec> paginators = <ObjectSpec>[];
   final List<FieldSpec> query = <FieldSpec>[];
   final List<FieldSpec> mutation = <FieldSpec>[];
 
@@ -125,14 +133,38 @@ class SchemaReader {
   // Types
   // ---------------------------------------------------------------------
 
-  /// Step 1: register a `@GraphQLType` class, so fields can point at it.
+  /// The operation annotations of a model, like `@GraphQLAll`.
+  static const List<String> operations = <String>[
+    'GraphQLAll',
+    'GraphQLPaginate',
+    'GraphQLFind',
+    'GraphQLCreate',
+    'GraphQLUpdate',
+    'GraphQLDelete',
+  ];
+
+  /// Stops the build when [element] has an operation annotation but no
+  /// `@GraphQL`.
+  static void checkOperations(ClassElement element) {
+    if (annotation(element, 'GraphQL') != null) return;
+    for (String kind in operations) {
+      if (annotation(element, kind) == null) continue;
+      _fail(
+        element.displayName,
+        '@$kind() needs @GraphQL() on the model too.',
+        element,
+      );
+    }
+  }
+
+  /// Step 1: register a `@GraphQL` class, so fields can point at it.
   void addType(ClassElement element) {
-    DartObject type = annotation(element, 'GraphQLType')!;
+    DartObject type = annotation(element, 'GraphQL')!;
     String where = element.displayName;
     if (element.isPrivate) {
       _fail(
         where,
-        'a @GraphQLType class can not be private: schema.g.dart is another '
+        'a @GraphQL class can not be private: schema.g.dart is another '
         'library. Remove the `_`.',
         element,
       );
@@ -141,34 +173,28 @@ class SchemaReader {
     _checkName(name, where, element);
     _claimTypeName(name, where, element);
     if (element.typeParameters.isNotEmpty) {
-      _fail(where, 'a @GraphQLType class can not be generic.', element);
+      _fail(where, 'a @GraphQL class can not be generic.', element);
     }
     DartObject? model = annotation(
       element,
       'DoxModel',
       package: 'dox_annotation',
     );
-    DartType? dto = type.getField('dto')?.toTypeValue();
-    DartType? policy = type.getField('policy')?.toTypeValue();
-    if (model == null && policy != null) {
-      _fail(where, '`policy:` works only on a model of dox_orm.', element);
-    }
-    if (model == null && dto != null) {
-      _fail(
-        where,
-        '`dto:` works only on a model of dox_orm. A plain class has no '
-        'table to write to: write a @GraphQLMutation() in a resolver.',
-        element,
-      );
-    }
-    String? owner = _string(type, 'owner');
-    if (owner != null && dto == null) {
-      _fail(
-        where,
-        '`owner:` needs `dto:`: the owner is set by the create mutation, '
-        'and it comes from the DTO.',
-        element,
-      );
+    String? filter = _string(type, 'filter');
+    if (model == null) {
+      if (filter != null) {
+        _fail(where, '`filter:` works only on a model of dox_orm.', element);
+      }
+      for (String kind in operations) {
+        if (annotation(element, kind) == null) continue;
+        _fail(
+          where,
+          '@$kind() works only on a model of dox_orm. A plain class has no '
+          'table: write a @GraphQLQuery() or @GraphQLMutation() in a '
+          'resolver.',
+          element,
+        );
+      }
     }
     imports.prefix(element.library);
     ObjectSpec spec = objects[element] = ObjectSpec(
@@ -177,40 +203,17 @@ class SchemaReader {
       element.library.uri.toString(),
       description: _string(type, 'description') ?? docOf(element),
     );
-    spec.auth = type.getField('auth')?.toBoolValue();
+    spec.guard = type.getField('guard')?.toBoolValue() ?? false;
     if (model == null) return;
     spec.orm = true;
-    spec.queries = type.getField('queries')?.toBoolValue() ?? true;
-    if (dto != null) {
-      Element? dtoElement = dto is InterfaceType ? dto.element : null;
-      if (dtoElement is! ClassElement || !_dtos.isDto(dtoElement)) {
-        _fail(
-          where,
-          '`dto:` must be a class with @Dto(), not '
-          '${dto.getDisplayString()}.',
-          element,
-        );
-      }
-      spec.dto = dtoElement;
-    }
-    if (policy != null) {
-      InterfaceType? base = _policyOf(policy, element);
-      if (base == null) {
-        _fail(
-          where,
-          '`policy:` must be a Policy of dox_auth for ${element.displayName}, '
-          'like `class ${element.displayName}Policy extends '
-          'Policy<User, ${element.displayName}>`, not '
-          '${policy.getDisplayString()}.',
-          element,
-        );
-      }
-      spec.policy = true;
-      spec.guestsDenied =
-          base.typeArguments.first.nullabilitySuffix !=
-          NullabilitySuffix.question;
-      hasPolicies = true;
-    }
+    spec.filter = filter;
+    spec.all = _operation(element, 'GraphQLAll');
+    spec.paginate = _operation(element, 'GraphQLPaginate');
+    spec.find = _operation(element, 'GraphQLFind');
+    spec.create = _operation(element, 'GraphQLCreate');
+    spec.update = _operation(element, 'GraphQLUpdate');
+    spec.delete = _operation(element, 'GraphQLDelete');
+    String? owner = spec.create?.owner;
     if (owner != null) {
       FieldElement? column = _columnNamed(element, owner);
       if (column == null) {
@@ -238,8 +241,45 @@ class SchemaReader {
     spec.keyType = key is InterfaceType ? key.element.displayName : 'int';
   }
 
-  /// Step 2: the fields of each registered class, and the list, find and
-  /// write fields of the models.
+  /// The operation annotation [kind] of the model [element], or null.
+  OperationSpec? _operation(ClassElement element, String kind) {
+    DartObject? a = annotation(element, kind);
+    if (a == null) return null;
+    String where = '${element.displayName} @$kind';
+    String? name = _string(a, 'name');
+    if (name != null) _checkName(name, where, element);
+    ClassElement? dtoElement;
+    DartObject? dtoField = a.getField('dto');
+    if (dtoField != null) {
+      DartType? dto = dtoField.toTypeValue();
+      Element? e = dto is InterfaceType ? dto.element : null;
+      if (e is! ClassElement || !_dtos.isDto(e)) {
+        _fail(
+          where,
+          '`dto:` must be a class with @Dto(), not '
+          '${dto?.getDisplayString() ?? 'null'}.',
+          element,
+        );
+      }
+      dtoElement = e;
+    }
+    String? can = _string(a, 'can');
+    if (can != null && can.isEmpty) {
+      _fail(where, '`can:` can not be empty.', element);
+    }
+    return OperationSpec(
+      kind,
+      name: name,
+      description: _string(a, 'description'),
+      can: can,
+      guard: a.getField('guard')?.toBoolValue() ?? false,
+      dto: dtoElement,
+      owner: _string(a, 'owner'),
+    );
+  }
+
+  /// Step 2: the fields of each registered class, and the root fields of
+  /// the operation annotations of the models.
   void readTypes() {
     for (ObjectSpec spec in objects.values) {
       if (spec.orm) {
@@ -374,8 +414,8 @@ class SchemaReader {
 
   /// The resolver code of relation [field] of the model [model] (as code).
   /// A list relation loads with `GraphQLOrm.many`, so one request can not
-  /// read a huge table. A relation to a model whose policy has `viewAny`
-  /// asks it first.
+  /// read a huge table. A relation to a model with `filter:` drops the
+  /// rows that the ability denies.
   String _relation(FieldElement field, String model) {
     String name = field.displayName;
     DartType type = field.type;
@@ -403,20 +443,39 @@ class SchemaReader {
           "'$name', info.context, ($model p) => p.$name)";
     }
     Element? element = related is InterfaceType ? related.element : null;
-    ObjectSpec? target = objects[element];
-    if (target == null || !target.policy) return code;
+    String? filter = objects[element]?.filter;
+    if (filter == null) return code;
+    usesGate = true;
     String relatedModel = imports.nonNullCode(related);
-    // at run time: `viewAny` gates the field, `view` drops the related
-    // rows it denies (a single one becomes null), when the policy has them
-    code = identical(related, type)
-        ? '_viewOne<$relatedModel>(info, $code)'
-        : '_viewList<$relatedModel>(info, $code)';
-    return "_allowIf<$relatedModel>(info, 'viewAny').then((_) => $code)";
+    // a single related row that the filter denies becomes null
+    return identical(related, type)
+        ? '_filterOne<$relatedModel>(info, ${literal(filter)}, $code)'
+        : '_filterList<$relatedModel>(info, ${literal(filter)}, $code)';
   }
 
-  /// The list and find queries, and with `dto:` the create, update and
-  /// delete mutations of a model. They are `AutoField`s, so
-  /// `GraphQLConfig(autoResolvers: false)` can leave them out.
+  /// Registers the start check of [ability] (of [annotation]) on the model
+  /// of [spec], and marks that the code uses `Gate`.
+  void _checkAbility(ObjectSpec spec, String annotation, String ability) {
+    usesGate = true;
+    ClassElement element = spec.element;
+    abilityChecks.add(
+      AbilityCheck(
+        annotation,
+        '${imports.prefix(element.library)}.${element.displayName}',
+        element.displayName,
+        ability,
+      ),
+    );
+  }
+
+  /// `@GraphQLFind(can: 'view')`, for the start check.
+  static String _canText(OperationSpec op) =>
+      "@${op.annotation}(can: '${op.can}')";
+
+  /// The root fields of the operation annotations of a model:
+  /// `@GraphQLAll`, `@GraphQLPaginate`, `@GraphQLFind`, `@GraphQLCreate`,
+  /// `@GraphQLUpdate` and `@GraphQLDelete`. A model without them has no
+  /// root field.
   void _addModelRoots(ObjectSpec spec) {
     ClassElement element = spec.element;
     String model = '${imports.prefix(element.library)}.${element.displayName}';
@@ -425,94 +484,312 @@ class SchemaReader {
         ? "int.tryParse(info.args.get<String>('id')!)"
         : "info.args.get<String>('id')!";
     ArgSpec idArg = ArgSpec('id', 'graphqlId.nonNull');
-    String auto = '$name (made for the model)';
-    // a policy that denies every guest: stop a guest before the lookup
-    String guest = spec.guestsDenied ? '\n  await _login(info);' : '';
-    String list = 'GraphQLOrm.list<$model>($model(), info)';
-    String find = 'GraphQLOrm.find<$model>($model(), $id)';
-    // The policy decides at run time (Gate.hasAbility): `viewAny` gates
-    // the list, `view` drops the rows it denies, so a list can have fewer
-    // rows than `limit`.
-    String guestIfView = spec.guestsDenied
-        ? '\n  if (view) await _login(info);'
-        : '';
-    if (spec.policy && spec.queries) {
-      list =
-          "_allowIf<$model>(info, 'viewAny').then((_) => "
-          '_viewList<$model>(info, $list))';
-      functions.add('''
-/// The $name with the id, after the `view` check of the policy when it has
-/// one. A missing id is checked as a blank $name, so a user the policy
-/// denies gets the same error for an id that exists and one that does not.
-Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
-  bool view = Gate.hasAbility<$model>('view');$guestIfView
-  $model? model = await $find;
-  if (view) {
-    await (model == null
-        ? _allowMissing(info, 'view', $model())
-        : _allow(info, 'view', model));
-  }
-  return model;
-}
-''');
-      find = '_find$name(info)';
+    String? filter = spec.filter;
+    if (filter != null) {
+      _checkAbility(spec, "@GraphQL(filter: '$filter')", filter);
     }
-    if (spec.queries) {
-      String hint = '$auto. Turn it off with @GraphQLType(queries: false)';
+    for (OperationSpec? op in <OperationSpec?>[
+      spec.all,
+      spec.paginate,
+      spec.find,
+      spec.create,
+      spec.update,
+      spec.delete,
+    ]) {
+      String? can = op?.can;
+      if (op != null && can != null) _checkAbility(spec, _canText(op), can);
+    }
+    String many = lcFirst(plural(name));
+
+    OperationSpec? all = spec.all;
+    if (all != null) {
+      String list = 'GraphQLOrm.list<$model>($model(), info)';
+      if (filter != null) {
+        list = '_filterList<$model>(info, ${literal(filter)}, $list)';
+      }
       _addField(
         query,
         FieldSpec(
-          name: lcFirst(plural(name)),
+          name: all.name ?? many,
           type: '${spec.variable}.nonNull.list.nonNull',
+          description: all.description,
           args: <ArgSpec>[
             ArgSpec('limit', 'graphqlInt', defaultValue: '20'),
             ArgSpec('offset', 'graphqlInt', defaultValue: '0'),
           ],
-          resolve: list,
-          where: hint,
-          auto: true,
-          auth: spec.auth,
-        ),
-        'Query',
-        element,
-      );
-      _addField(
-        query,
-        FieldSpec(
-          name: lcFirst(name),
-          type: spec.variable,
-          args: <ArgSpec>[idArg],
-          resolve: find,
-          where: hint,
-          auto: true,
-          auth: spec.auth,
+          resolve: _typeCheck(all, model, list),
+          where: '@GraphQLAll on ${element.displayName}',
+          guard: all.guard,
         ),
         'Query',
         element,
       );
     }
-    ClassElement? dtoElement = spec.dto;
-    if (dtoElement == null) return;
-    InputSpec create = inputOf(dtoElement, name: 'Create${name}Input')
+
+    OperationSpec? paginate = spec.paginate;
+    if (paginate != null) {
+      _claimTypeName('${name}Paginator', '@GraphQLPaginate on $name', element);
+      if (paginators.isEmpty) {
+        _claimTypeName('PaginatorInfo', '@GraphQLPaginate on $name', element);
+      }
+      paginators.add(spec);
+      String page = 'GraphQLOrm.paginate<$model>($model(), info)';
+      if (filter != null) {
+        page = '_filterPage<$model>(info, ${literal(filter)}, $page)';
+      }
+      _addField(
+        query,
+        FieldSpec(
+          name: paginate.name ?? (all == null ? many : '${many}Paginate'),
+          type: '${spec.paginator}.nonNull',
+          description: paginate.description,
+          args: <ArgSpec>[
+            ArgSpec('first', 'graphqlInt', defaultValue: '20'),
+            ArgSpec('page', 'graphqlInt', defaultValue: '1'),
+          ],
+          resolve: _typeCheck(paginate, model, page),
+          where: '@GraphQLPaginate on ${element.displayName}',
+          guard: paginate.guard,
+        ),
+        'Query',
+        element,
+      );
+    }
+
+    OperationSpec? find = spec.find;
+    if (find != null) {
+      String read = 'GraphQLOrm.find<$model>($model(), $id)';
+      String? can = find.can;
+      if (can != null || filter != null) {
+        String check = can == null
+            ? ''
+            : '''
+  await (model == null
+      ? _allowMissing(info, ${literal(can)}, $model())
+      : _allow(info, ${literal(can)}, model));''';
+        // a row that the filter denies gives null, like a missing id
+        String result = filter == null
+            ? 'model'
+            : 'await _filterOne<$model>(info, ${literal(filter)}, '
+                  'Future<$model?>.value(model))';
+        functions.add('''
+/// The $name with the id, after the `can:` check and the `filter:` of
+/// the type. A missing id is checked as a blank $name, so a denied user
+/// gets the same error for an id that exists and one that does not. A
+/// row that the filter denies gives null, like a missing id.
+Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await $read;$check
+  return $result;
+}
+''');
+        read = '_find$name(info)';
+      }
+      _addField(
+        query,
+        FieldSpec(
+          name: find.name ?? lcFirst(name),
+          type: spec.variable,
+          description: find.description,
+          args: <ArgSpec>[idArg],
+          resolve: read,
+          where: '@GraphQLFind on ${element.displayName}',
+          guard: find.guard,
+        ),
+        'Query',
+        element,
+      );
+    }
+
+    for (OperationSpec? op in <OperationSpec?>[spec.update, spec.delete]) {
+      if (op == null || op.can != null || op.guard || spec.guard) continue;
+      String field =
+          op.name ??
+          '${op.annotation == 'GraphQLUpdate' ? 'update' : 'delete'}$name';
+      log.warning(
+        '$field (@${op.annotation} on ${element.displayName}) has no can: and '
+        'no guard: - anyone can call it.',
+      );
+    }
+    OperationSpec? create = spec.create;
+    if (create != null) _addCreate(spec, create, model);
+    OperationSpec? update = spec.update;
+    if (update != null) _addUpdate(spec, update, model, id, idArg);
+
+    OperationSpec? delete = spec.delete;
+    if (delete != null) {
+      String? can = delete.can;
+      String missing = can == null
+          ? ''
+          : '\n    await _allowMissing(info, ${literal(can)}, $model());';
+      String allow = can == null
+          ? ''
+          : '\n  await _allow(info, ${literal(can)}, model);';
+      functions.add('''
+/// Deletes a $name. False when there is no $name with that id.
+Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await GraphQLOrm.find<$model>($model(), $id);
+  if (model == null) {$missing
+    return false;
+  }$allow
+  await model.delete();
+  return true;
+}
+''');
+      _addField(
+        mutation,
+        FieldSpec(
+          name: delete.name ?? 'delete$name',
+          type: 'graphqlBoolean.nonNull',
+          description: delete.description,
+          args: <ArgSpec>[idArg],
+          resolve: '_delete$name(info)',
+          where: '@GraphQLDelete on ${element.displayName}',
+          // it gives a Boolean, so the guard of the type does not reach it
+          guard: delete.guard || spec.guard,
+        ),
+        'Mutation',
+        element,
+      );
+    }
+  }
+
+  /// [code] after the `can:` check of [op] on the model type, when it has
+  /// one.
+  static String _typeCheck(OperationSpec op, String model, String code) {
+    String? can = op.can;
+    if (can == null) return code;
+    return '_allow(info, ${literal(can)}, $model).then((_) => $code)';
+  }
+
+  void _addCreate(ObjectSpec spec, OperationSpec op, String model) {
+    ClassElement element = spec.element;
+    String name = spec.name;
+    ClassElement dtoElement = op.dto!;
+    InputSpec input = inputOf(dtoElement, name: 'Create${name}Input')
       ..validated = true;
-    InputSpec? update = spec.policy
-        ? inputOf(dtoElement, name: 'Update${name}Input')
-        : null;
+    String dto =
+        '${imports.prefix(dtoElement.library)}.${dtoElement.displayName}';
+    _DtoCode code = _dtoCode(spec, dtoElement, 'GraphQLCreate');
+    String? owner = spec.owner;
+    String ownerSet = owner == null
+        ? ''
+        : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
+              "info.context, '${element.displayName}.$owner');";
+    String? can = op.can;
+    String allow = can == null
+        ? ''
+        : '\n  await _allow(info, ${literal(can)}, $model);';
+    functions.add('''
+/// Makes a $name from the input of `@GraphQLCreate`.
+Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allow
+  $dto dto = await ${input.validate}(info.args.input('input')!, info.context);
+  $model model = $model()${code.sets.join()};$ownerSet
+  await model.save();
+  return model;
+}
+''');
+    _addField(
+      mutation,
+      FieldSpec(
+        name: op.name ?? 'create$name',
+        type: '${spec.variable}.nonNull',
+        description: op.description,
+        args: <ArgSpec>[ArgSpec('input', '${input.variable}.nonNull')],
+        resolve: _filtered(
+          element.thisType,
+          '_create$name(info)',
+          '@GraphQLCreate on ${element.displayName}',
+          element,
+        ),
+        where: '@GraphQLCreate on ${element.displayName}',
+        // the owner is the logged-in user, so there must be one
+        guard: op.guard || owner != null,
+      ),
+      'Mutation',
+      element,
+    );
+  }
+
+  void _addUpdate(
+    ObjectSpec spec,
+    OperationSpec op,
+    String model,
+    String id,
+    ArgSpec idArg,
+  ) {
+    ClassElement element = spec.element;
+    String name = spec.name;
+    ClassElement dtoElement = op.dto!;
+    InputSpec input = inputOf(dtoElement, name: 'Update${name}Input');
     String dtoPrefix = imports.prefix(dtoElement.library);
     String dto = '$dtoPrefix.${dtoElement.displayName}';
     String schema = '$dtoPrefix.\$${dtoElement.displayName}Dto';
+    _DtoCode code = _dtoCode(spec, dtoElement, 'GraphQLUpdate');
+    String key = camelCase(spec.primaryKey);
+    String? can = op.can;
+    String missing = can == null
+        ? ''
+        : '\n    await _allowMissing(info, ${literal(can)}, $model());';
+    String allow = can == null
+        ? ''
+        : '\n  await _allow(info, ${literal(can)}, model);';
+    functions.add('''
+/// Sets the fields the client sent on a $name. Null when there is no
+/// $name with that id.
+Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
+  $model? model = await GraphQLOrm.find<$model>($model(), $id);
+  if (model == null) {$missing
+    return null;
+  }$allow
+  InputValues input = info.args.input('input')!;
+  Map<String, Object?> given = ${input.toMap}(input);
+  // the other fields keep their stored values, and are not checked
+  $dto dto = await GraphQLDto.validateSent<$dto>(
+    $schema,
+    <String, Object?>{${code.current.join()} ...given},
+    info.context,
+    sent: given.keys.toSet(),
+    placeholders: const <String, Object?>{${code.placeholders.join()}},
+    names: const <String, String>{${code.names.join()}},
+    params: <String, String>{'id': '\${model.$key}'},
+  );
+  ${code.updates.join('\n  ')}
+  await model.save();
+  return model;
+}
+''');
+    _addField(
+      mutation,
+      FieldSpec(
+        name: op.name ?? 'update$name',
+        type: spec.variable,
+        description: op.description,
+        args: <ArgSpec>[idArg, ArgSpec('input', '${input.variable}.nonNull')],
+        resolve: _filtered(
+          element.thisType,
+          '_update$name(info)',
+          '@GraphQLUpdate on ${element.displayName}',
+          element,
+        ),
+        where: '@GraphQLUpdate on ${element.displayName}',
+        guard: op.guard,
+      ),
+      'Mutation',
+      element,
+    );
+  }
 
-    List<String> sets = <String>[];
-    List<String> updates = <String>[];
-    List<String> current = <String>[];
-    List<String> names = <String>[];
-    List<String> placeholders = <String>[];
+  /// The code that sets the fields of the `@Dto` class [dtoElement] on the
+  /// model of [spec], with the build checks of each field.
+  _DtoCode _dtoCode(ObjectSpec spec, ClassElement dtoElement, String kind) {
+    ClassElement element = spec.element;
+    _DtoCode code = _DtoCode();
     for (DtoField field in _dtos.read(dtoElement).fields) {
       String where = '${dtoElement.displayName}.${field.name}';
       if (field.maybe) {
         _fail(
           where,
-          'a Maybe field can not be in the `dto:` of a model. The update '
+          'a Maybe field can not be in the `dto:` of @$kind. The update '
           'mutation already sets only the fields the client sends.',
           field.element,
         );
@@ -521,8 +798,9 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
         _fail(
           where,
           '"${field.name}" is the `owner:` of ${element.displayName}, so it '
-          'can not be in the `dto:`. The create mutation sets it to the id '
-          'of the logged-in user. Remove it from the DTO.',
+          'can not be in the `dto:` of @$kind. The create mutation sets it '
+          'to the id of the logged-in user, and the update never changes '
+          'it. Remove it from the DTO.',
           field.element,
         );
       }
@@ -531,7 +809,7 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
         _fail(
           where,
           '${element.displayName} has no @Column() field "${field.name}". '
-          'The `dto:` of a model can set only its columns.',
+          'The `dto:` of @$kind can set only its columns.',
           field.element,
         );
       }
@@ -557,17 +835,17 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
         DtoKind.boolean => 'model.${field.name}',
         _ => _fail(
           where,
-          'the `dto:` of a model can set only text, number, bool, '
-          'DateTime and enum columns.',
+          'the `dto:` of @$kind can set only text, number, bool, DateTime '
+          'and enum columns.',
           field.element,
         ),
       };
-      sets.add('..${field.name} = dto.${field.name}');
-      updates.add(
+      code.sets.add('..${field.name} = dto.${field.name}');
+      code.updates.add(
         "if (input.has('${field.name}')) "
         'model.${field.name} = dto.${field.name};',
       );
-      current.add("'${field.key}': $value,");
+      code.current.add("'${field.key}': $value,");
       // a value of the right type, for a stored value that has a wrong
       // one (see GraphQLDto.validateSent). It is never saved.
       String placeholder = switch (field.type.kind) {
@@ -580,137 +858,12 @@ Future<$model?> _find$name(ResolveInfo<DoxGraphQLContext> info) async {
         // enum: the name of its first value
         _ => "'${_enumOf(field.type).constants.first.displayName}'",
       };
-      placeholders.add("'${field.key}': $placeholder,");
+      code.placeholders.add("'${field.key}': $placeholder,");
       if (field.key != field.name) {
-        names.add("'${field.key}': '${field.name}',");
+        code.names.add("'${field.key}': '${field.name}',");
       }
     }
-    String key = camelCase(spec.primaryKey);
-    String? owner = spec.owner;
-    // A model with an owner is written by a logged-in user only. The login
-    // check runs before the resolver, so a guest never reaches the lookup.
-    bool? ownerAuth = owner != null ? true : spec.auth;
-    String ownerSet = owner == null
-        ? ''
-        : '\n  model.$owner = await GraphQLAuth.ownerId<${spec.ownerType}>('
-              "info.context, '${element.displayName}.$owner');";
-    String allowCreate = spec.policy
-        ? "\n  await _allowIf<$model>(info, 'create');"
-        : '';
-    functions.add('''
-/// Makes a $name from the input of `create$name`.
-Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allowCreate
-  $dto dto = await ${create.validate}(info.args.input('input')!, info.context);
-  $model model = $model()${sets.join()};$ownerSet
-  await model.save();
-  return model;
-}
-''');
-    String hint = '$auto from `dto:`';
-    _addField(
-      mutation,
-      FieldSpec(
-        name: 'create$name',
-        type: '${spec.variable}.nonNull',
-        args: <ArgSpec>[ArgSpec('input', '${create.variable}.nonNull')],
-        resolve: '_create$name(info)',
-        where: hint,
-        auto: true,
-        // the owner is the logged-in user, so there must be one
-        auth: ownerAuth,
-      ),
-      'Mutation',
-      element,
-    );
-    // ponytail: no policy, no update or delete: a write to a row needs a
-    // rule about who owns it.
-    if (update == null) return;
-    functions
-      ..add('''
-/// Sets the fields the client sent on a $name. Null when there is no
-/// $name with that id and the policy allows the update of a blank one.
-Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
-  $model? model = await GraphQLOrm.find<$model>($model(), $id);
-  if (model == null) {
-    await _allowMissing(info, 'update', $model());
-    return null;
-  }
-  await _allow(info, 'update', model);
-  InputValues input = info.args.input('input')!;
-  Map<String, Object?> given = ${update.toMap}(input);
-  // the other fields keep their stored values, and are not checked
-  $dto dto = await GraphQLDto.validateSent<$dto>(
-    $schema,
-    <String, Object?>{${current.join()} ...given},
-    info.context,
-    sent: given.keys.toSet(),
-    placeholders: const <String, Object?>{${placeholders.join()}},
-    names: const <String, String>{${names.join()}},
-    params: <String, String>{'id': '\${model.$key}'},
-  );
-  ${updates.join('\n  ')}
-  await model.save();
-  return model;
-}
-''')
-      ..add('''
-/// Deletes a $name. False when there is no $name with that id and the
-/// policy allows the delete of a blank one.
-Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
-  $model? model = await GraphQLOrm.find<$model>($model(), $id);
-  if (model == null) {
-    await _allowMissing(info, 'delete', $model());
-    return false;
-  }
-  await _allow(info, 'delete', model);
-  await model.delete();
-  return true;
-}
-''');
-    _addField(
-      mutation,
-      FieldSpec(
-        name: 'update$name',
-        type: spec.variable,
-        args: <ArgSpec>[idArg, ArgSpec('input', '${update.variable}.nonNull')],
-        resolve: '_update$name(info)',
-        where: hint,
-        auto: true,
-        auth: ownerAuth,
-      ),
-      'Mutation',
-      element,
-    );
-    _addField(
-      mutation,
-      FieldSpec(
-        name: 'delete$name',
-        type: 'graphqlBoolean.nonNull',
-        args: <ArgSpec>[idArg],
-        resolve: '_delete$name(info)',
-        where: hint,
-        auto: true,
-        auth: ownerAuth,
-      ),
-      'Mutation',
-      element,
-    );
-  }
-
-  /// The `Policy<U, M>` of dox_auth that [policy] extends, when [model]
-  /// is its `M`. Else null.
-  static InterfaceType? _policyOf(DartType policy, ClassElement model) {
-    if (policy is! InterfaceType) return null;
-    for (InterfaceType t in policy.allSupertypes) {
-      if (t.element.name != 'Policy' ||
-          !t.element.library.uri.toString().startsWith('package:dox_auth/') ||
-          t.typeArguments.length != 2) {
-        continue;
-      }
-      DartType m = t.typeArguments[1];
-      return m is InterfaceType && m.element == model ? t : null;
-    }
-    return null;
+    return code;
   }
 
   static EnumElement _enumOf(DtoType type) {
@@ -748,7 +901,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
       _fail(
         '${element.displayName}.${method.displayName}',
         '@GraphQLField() works on a getter or a field. For a field with '
-            'arguments, write a @ResolveField() method in a resolver.',
+            'arguments, write a @GraphQLResolveField() method in a resolver.',
         method,
       );
     }
@@ -769,22 +922,22 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     String name = _string(field, 'name') ?? dartName;
     _checkName(name, where, member);
     String gql = _outputType(_unwrapFuture(type), where, member);
-    bool? fieldAuth = field?.getField('auth')?.toBoolValue();
+    bool fieldGuard = field?.getField('guard')?.toBoolValue() ?? false;
     // A relation can fail on its own (a policy, a login, the row cap, a
     // database error), so it is always nullable. Another field is nullable
     // when it can be refused. A non-null field would null the parent. List
     // items stay non-null: a policy drops a row, it does not null it.
-    if (relation || _mayRefuse(type, fieldAuth)) gql = _nullable(gql);
+    if (relation || _mayRefuse(type, fieldGuard)) gql = _nullable(gql);
     _addField(
       spec.fields,
       FieldSpec(
         name: name,
         type: gql,
-        resolve: resolve ?? 's.$dartName',
+        resolve: resolve ?? _filtered(type, 's.$dartName', where, member),
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
-        auth: fieldAuth,
+        guard: fieldGuard,
         column: column,
       ),
       spec.name,
@@ -792,34 +945,77 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     );
   }
 
-  /// True when a field can be refused at run time, so it must be nullable.
-  /// That is true for `auth: true` on the field, and for a field that
-  /// gives a registered type that can refuse. The type decides first, like
-  /// `GraphQLAuth.needsLogin`: a `policy:` or `auth: true` on the type
-  /// refuses, and `auth: false` on the type (with no policy) is public
-  /// unless the field has `auth: true`. Else the `auth:` of the field
-  /// decides. With no `auth:` on both, the app default applies (a login
-  /// when the app has an auth middleware). It is not known here, so the
-  /// field may refuse.
-  bool _mayRefuse(DartType type, bool? fieldAuth) {
-    if (fieldAuth == true) return true;
+  /// True when a field can be refused at run time, so it must be nullable:
+  /// it has `guard: true`, or it gives a registered type with
+  /// `guard: true` (like `GraphQLAuth.needsLogin`), or it gives one row of
+  /// a model with `filter:` (a denied row is null).
+  bool _mayRefuse(DartType type, bool fieldGuard) {
+    if (fieldGuard) return true;
     DartType related = _unwrapFuture(type);
-    if (related is InterfaceType && related.isDartCoreList) {
+    bool list = related is InterfaceType && related.isDartCoreList;
+    if (related is InterfaceType && list) {
       related = related.typeArguments.first;
     }
     Element? element = related is InterfaceType ? related.element : null;
     ObjectSpec? target = objects[element];
     if (target == null) return false;
-    if (target.policy || target.auth == true) return true;
-    return fieldAuth ?? target.auth != false;
+    return target.guard || (!list && target.filter != null);
+  }
+
+  /// [resolve] (code of a value of Dart type [type], or a Future of it)
+  /// with the `filter:` of the model it gives, when it has one: a denied
+  /// row is null, and a list drops the denied rows. The `filter:` is a rule
+  /// of the type, so every field that gives the model runs it.
+  ///
+  /// A filtered model can be given only as `M`, `M?`, `List<M>` or
+  /// `List<M>?`. Another shape (`List<M?>`, `List<List<M>>`) stops the
+  /// build: its rows could not be filtered. [where] and [element] are for
+  /// that error.
+  String _filtered(
+    DartType type,
+    String resolve,
+    String where,
+    Element element,
+  ) {
+    DartType value = _unwrapFuture(type);
+    bool list = value is InterfaceType && value.isDartCoreList;
+    DartType item = value is InterfaceType && list
+        ? value.typeArguments.first
+        : value;
+    // the model inside any number of lists
+    DartType inner = item;
+    while (inner is InterfaceType && inner.isDartCoreList) {
+      inner = inner.typeArguments.first;
+    }
+    ObjectSpec? target = objects[inner is InterfaceType ? inner.element : null];
+    String? filter = target?.filter;
+    if (filter == null) return resolve;
+    if (!identical(inner, item) ||
+        (list && item.nullabilitySuffix == NullabilitySuffix.question)) {
+      String name = target!.element.displayName;
+      _fail(
+        where,
+        'it gives ${value.getDisplayString()}, but $name has filter:. A '
+        'filtered model can be given as $name, $name?, List<$name> or '
+        'List<$name>? only.',
+        element,
+      );
+    }
+    usesGate = true;
+    String model = imports.nonNullCode(item);
+    String ability = literal(filter);
+    return list
+        ? '_filterList<$model>(info, $ability, '
+              'Future<List<$model>?>.value($resolve))'
+        : '_filterOne<$model>(info, $ability, Future<$model?>.value($resolve))';
   }
 
   // ---------------------------------------------------------------------
   // Resolvers
   // ---------------------------------------------------------------------
 
-  /// True when [element] has a `@Query`, `@Mutation` or `@ResolveField`
-  /// method.
+  /// True when [element] has a `@GraphQLQuery`, `@GraphQLMutation` or
+  /// `@GraphQLResolveField` method.
   static bool isResolver(ClassElement element) {
     for (MethodElement method in element.methods) {
       if (_rootKind(method) != null) return true;
@@ -831,14 +1027,14 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     for (String kind in const <String>[
       'GraphQLQuery',
       'GraphQLMutation',
-      'ResolveField',
+      'GraphQLResolveField',
     ]) {
       if (annotation(method, kind) != null) return kind;
     }
     return null;
   }
 
-  /// Reads the `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField` methods of
+  /// Reads the `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField` methods of
   /// [element]. The class is made for each call, with its constructor
   /// parameters from the Dox container.
   void readResolver(ClassElement element) {
@@ -903,7 +1099,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     List<FormalParameterElement> params = method.formalParameters;
 
     ObjectSpec? parent;
-    if (kind == 'ResolveField') {
+    if (kind == 'GraphQLResolveField') {
       DartType? first = params.isEmpty ? null : params.first.type;
       Element? firstElement = first is InterfaceType ? first.element : null;
       parent = firstElement is ClassElement ? objects[firstElement] : null;
@@ -912,8 +1108,8 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
           first!.nullabilitySuffix == NullabilitySuffix.question) {
         _fail(
           where,
-          'the first parameter of a @ResolveField() method must be the '
-          'parent: a non-null @GraphQLType class, like `Post post`.',
+          'the first parameter of a @GraphQLResolveField() method must be the '
+          'parent: a non-null @GraphQL class, like `Post post`.',
           method,
         );
       }
@@ -954,17 +1150,22 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
 
     DartType returnType = _unwrapFuture(method.returnType);
     String type = _outputType(returnType, where, method);
-    bool? methodAuth = ann.getField('auth')?.toBoolValue();
+    bool methodGuard = ann.getField('guard')?.toBoolValue() ?? false;
     // a root field is made nullable in _addField
-    if (_mayRefuse(returnType, methodAuth)) type = _nullable(type);
+    if (_mayRefuse(returnType, methodGuard)) type = _nullable(type);
     FieldSpec field = FieldSpec(
       name: name,
       type: type,
-      resolve: '$instance.${method.displayName}(${values.join(', ')})',
+      resolve: _filtered(
+        returnType,
+        '$instance.${method.displayName}(${values.join(', ')})',
+        where,
+        method,
+      ),
       where: where,
       description: _string(ann, 'description') ?? docOf(method),
       deprecationReason: _string(ann, 'deprecationReason'),
-      auth: methodAuth,
+      guard: methodGuard,
       args: args,
       isAsync: isAsync,
     );
@@ -1051,7 +1252,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     _fail(
       where,
       'the type ${type.getDisplayString()} can not be a GraphQL field. Use '
-      'String, int, double, bool, DateTime, an enum, a @GraphQLType class '
+      'String, int, double, bool, DateTime, an enum, a @GraphQL class '
       'or a List of them. Or add @GraphQLIgnore().',
       element,
     );
@@ -1292,7 +1493,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
       _fail(
         where,
         'the GraphQL type name "$name" is used twice: here and by $other. '
-        'Rename one, like @GraphQLType(name: \'Other\').',
+        'Rename one, like @GraphQL(name: \'Other\').',
         element,
       );
     }
@@ -1312,6 +1513,35 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
   static Never _fail(String where, String message, Element element) {
     throw InvalidGenerationSourceError('$where: $message', element: element);
   }
+}
+
+/// The code of each field of a `@Dto` class of a create or update.
+class _DtoCode {
+  /// `..title = dto.title`
+  final List<String> sets = <String>[];
+
+  /// `if (input.has('title')) model.title = dto.title;`
+  final List<String> updates = <String>[];
+
+  /// `'title': model.title,`: the stored values
+  final List<String> current = <String>[];
+
+  /// `'title': '-',`: a value of the right type for each field
+  final List<String> placeholders = <String>[];
+
+  /// `'user_id': 'userId',`: the input keys that differ from the names
+  final List<String> names = <String>[];
+}
+
+/// [text] as a Dart string literal.
+String literal(String text) {
+  String escaped = text
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'")
+      .replaceAll(r'$', r'\$')
+      .replaceAll('\n', r'\n')
+      .replaceAll('\r', r'\r');
+  return "'$escaped'";
 }
 
 /// `user_id` -> `userId`.
@@ -1343,7 +1573,7 @@ String lcFirst(String text) => text[0].toLowerCase() + text.substring(1);
 /// `Categories`, `Box` -> `Boxes`.
 String plural(String name) {
   // ponytail: simple rules, no list of odd words (Person, Child). A model
-  // with an odd plural turns its queries off and writes a resolver.
+  // with an odd plural sets `name:` on @GraphQLAll.
   if (RegExp(r'[^aeiou]y$').hasMatch(name)) {
     return '${name.substring(0, name.length - 1)}ies';
   }

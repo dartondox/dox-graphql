@@ -10,25 +10,16 @@ import 'graphql_context.dart';
 
 /// The login check of each GraphQL field.
 ///
-/// Which fields need a logged-in user:
-///
-/// 1. A field that gives a type with `auth: true` (like
-///    `@GraphQLType(auth: true)`). This also covers relations and custom
-///    resolvers that give the type.
-/// 2. Else, a field with `auth:` set uses it.
-/// 3. Else, a field that gives a type with `auth: false` is public.
-/// 4. Else, a root field (of `Query` or `Mutation`) and a field that
-///    gives an object, interface or union use the default: a login when
-///    `GraphQLConfig.middleware` has an [IAuthMiddleware], else public.
-/// 5. Else (a scalar or enum field of a type) the field is public.
-///
-/// An interface or union field is also checked on the object type it
-/// picks for its value: a type with `auth: true` needs a login there too.
+/// A field needs a logged-in user when it has `guard: true`, or when it
+/// gives a type with `guard: true` (like `@GraphQL(guard: true)`).
+/// The type also covers relations and custom resolvers that give it,
+/// and an interface or union field that picks it for its value. Every
+/// other field is public.
 ///
 /// A field that fails the check gets the error "Unauthenticated" with
 /// `extensions: {code: UNAUTHENTICATED}`. Its resolver does not run.
 class GraphQLAuth implements FieldGuard {
-  GraphQLAuth(this._schema, {required this.loginByDefault});
+  GraphQLAuth(this._schema);
 
   /// The error code of a field that needs a login.
   static const String unauthenticated = 'UNAUTHENTICATED';
@@ -37,9 +28,6 @@ class GraphQLAuth implements FieldGuard {
   static const String forbiddenCode = 'FORBIDDEN';
 
   final GraphQLSchema<DoxGraphQLContext> _schema;
-
-  /// True when fields need a login by default.
-  final bool loginByDefault;
 
   /// The error of a read or write that a policy denies: "Forbidden" with
   /// `extensions: {code: FORBIDDEN}`.
@@ -70,7 +58,7 @@ class GraphQLAuth implements FieldGuard {
   }
 
   /// Throws a [StateError] when a field or type of [schema] has
-  /// `auth: true` but [middleware] has no [IAuthMiddleware]: the user
+  /// `guard: true` but [middleware] has no [IAuthMiddleware]: the user
   /// could never be known.
   static void checkSchema(
     GraphQLSchema<Object?> schema,
@@ -79,24 +67,24 @@ class GraphQLAuth implements FieldGuard {
     if (logins(middleware).isNotEmpty) return;
     for (NamedType type in schema.typeMap.values) {
       if (type is! ObjectType<Object?, Object?>) continue;
-      if (type.auth == true) _noLogin('type ${type.name}');
+      if (type.guard) _noLogin('type ${type.name}');
       for (Field<Object?, Object?> field in type.fields) {
-        if (field.auth == true) _noLogin('field ${type.name}.${field.name}');
+        if (field.guard) _noLogin('field ${type.name}.${field.name}');
       }
     }
   }
 
   static Never _noLogin(String what) {
     throw StateError(
-      'The GraphQL $what has auth: true, but GraphQLConfig.middleware has '
+      'The GraphQL $what has guard: true, but GraphQLConfig.middleware has '
       'no auth middleware, so no user is ever logged in. Add the auth '
-      'middleware, like `middleware: <Object>[AuthMiddleware()]`. (The '
-      'create mutation of a model with `owner:` has auth: true too.)',
+      'middleware, like `middleware: <Object>[AuthMiddleware()]`. (A '
+      '@GraphQLCreate with `owner:` has guard: true too.)',
     );
   }
 
   /// The id of the logged-in user, for the `owner:` column [where] (like
-  /// `Post.userId`) of a create mutation. The code that
+  /// `Post.userId`) of a `@GraphQLCreate`. The code that
   /// `dox_graphql_builder` writes calls it.
   ///
   /// A guest gets "Unauthenticated". A user with no id, or an id that is
@@ -126,15 +114,8 @@ class GraphQLAuth implements FieldGuard {
       return false;
     }
     NamedType type = _named(field.type);
-    bool? typeAuth = type is ObjectType<Object?, Object?> ? type.auth : null;
-    if (typeAuth == true) return true;
-    bool? fieldAuth = field.auth;
-    if (fieldAuth != null) return fieldAuth;
-    if (typeAuth == false) return false;
-    bool root =
-        identical(parent, _schema.query) || identical(parent, _schema.mutation);
-    if (root || type.isComposite) return loginByDefault;
-    return false;
+    if (type is ObjectType<Object?, Object?> && type.guard) return true;
+    return field.guard;
   }
 
   /// The root fields and the fields that give an object, interface or
@@ -185,13 +166,13 @@ class GraphQLAuth implements FieldGuard {
   }
 
   /// A value of an interface or union field whose object type has
-  /// `auth: true` needs a login, even when the field is public.
+  /// `guard: true` needs a login, even when the field is public.
   @override
   FutureOr<GraphQLError?> checkType(
     ObjectType<Object?, Object?> type,
     Object? context,
   ) {
-    if (type.auth != true || type.name.startsWith('__')) return null;
+    if (!type.guard || type.name.startsWith('__')) return null;
     if (context is! DoxGraphQLContext) return _error();
     return _checkUser(context);
   }

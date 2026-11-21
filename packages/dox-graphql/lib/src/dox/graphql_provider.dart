@@ -4,7 +4,6 @@ import 'package:dox_core/dox_core.dart';
 
 import '../executor.dart';
 import '../schema.dart';
-import 'auto_field.dart';
 import 'graphql_auth.dart';
 import 'graphql_config.dart';
 import 'graphql_context.dart';
@@ -31,12 +30,10 @@ class GraphQLProvider extends DoxProvider {
   @override
   void setup() {
     bool dev = Dox().config.isDevelopment;
-    GraphQLSchema<DoxGraphQLContext> schema = config.autoResolvers
-        ? config.schema
-        : AutoField.leaveOut(config.schema);
+    GraphQLSchema<DoxGraphQLContext> schema = config.schema;
     GraphQLAuth.checkSchema(schema, config.middleware);
     List<IAuthMiddleware> logins = GraphQLAuth.logins(config.middleware);
-    GraphQLAuth guard = GraphQLAuth(schema, loginByDefault: logins.isNotEmpty);
+    GraphQLAuth guard = GraphQLAuth(schema);
     if (dev && Dox().isolateId == 1) {
       (int, int) count = guard.count();
       stdout.writeln(
@@ -70,11 +67,17 @@ class GraphQLProvider extends DoxProvider {
   /// The routes are added here, after the `setup()` of every provider, so
   /// the global middleware that other packages add is known.
   ///
+  /// The `startChecks` of the schema run here too, so the policies that a
+  /// provider registers in `setup()` are known.
+  ///
   /// The auth middleware does not run on the route: a guest or a bad
   /// token is not stopped here. The context runs it, in its optional
   /// form, the first time a field needs the user (see [GraphQLAuth]).
   @override
   void boot() {
+    for (void Function() check in config.schema.startChecks) {
+      check();
+    }
     Route.middleware(<dynamic>[
       ...Dox().allGlobalMiddleware,
       ...GraphQLAuth.withoutLogins(config.middleware),

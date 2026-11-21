@@ -4,6 +4,7 @@ import 'package:build/build.dart';
 import 'package:build_test/build_test.dart';
 import 'package:dox_graphql_builder/dox_graphql_builder.dart';
 import 'package:glob/glob.dart';
+import 'package:logging/logging.dart';
 import 'package:test/test.dart';
 
 /// The real sources of the packages the test apps import, read once.
@@ -53,11 +54,19 @@ Future<void> _load() async {
   }
 }
 
+/// The warnings of the last [generate].
+final List<String> warnings = <String>[];
+
+void _onLog(LogRecord record) {
+  if (record.level == Level.WARNING) warnings.add(record.message);
+}
+
 /// Runs the builder on the files of package `a`. Gives the generated
 /// file, `ERROR: ...` with the build errors, or `NONE` when no file was
 /// written.
 Future<String> generate(Map<String, String> app) async {
   await _load();
+  warnings.clear();
   String output = 'NONE';
   Map<String, Object> sources = <String, Object>{
     for (MapEntry<AssetId, List<int>> e in _packages.entries)
@@ -69,6 +78,7 @@ Future<String> generate(Map<String, String> app) async {
     sources,
     rootPackage: 'a',
     isInput: _isApp,
+    onLog: _onLog,
   );
   if (!result.succeeded) return 'ERROR: ${result.errors.join('\n')}';
   if (result.outputs.isEmpty) return output;

@@ -1,6 +1,6 @@
 ---
 name: dox-graphql-guide
-description: Use when you add or change a GraphQL API in a Dox (Dart) app with dox_graphql, dox_graphql_builder and dox_graphql_orm. Covers dox add graphql, GraphQLConfig and its limits, @GraphQLType on models and plain classes, the automatic list, find, create, update and delete fields, @GraphQLQuery, @GraphQLMutation and @ResolveField resolvers, login rules with auth:, owner:, policies, error codes, and how to test a query.
+description: Use when you add or change a GraphQL API in a Dox (Dart) app with dox_graphql, dox_graphql_builder and dox_graphql_orm. Covers dox add graphql, GraphQLConfig and its limits, @GraphQL on models and plain classes, the operation annotations @GraphQLAll, @GraphQLPaginate, @GraphQLFind, @GraphQLCreate, @GraphQLUpdate and @GraphQLDelete, @GraphQLQuery, @GraphQLMutation and @GraphQLResolveField resolvers, login rules with guard:, policy checks with can: and filter:, owner:, error codes, and how to test a query.
 ---
 
 # dox_graphql guide
@@ -27,7 +27,7 @@ The command does these things. It never overwrites a file. Do not make these fil
 - Writes `lib/config/graphql.dart` and `lib/providers/graphql_provider.dart`.
 - Runs `build_runner`.
 
-The command does not add `dox_auth`. The config that it writes is `GraphQLConfig(schema: graphqlSchema)`, with no middleware. Thus, the API is public until you add the auth middleware (see Config).
+The command does not add `dox_auth`. The config that it writes is `GraphQLConfig(schema: graphqlSchema)`, with no middleware. `guard:`, `can:`, `filter:` and `owner:` need the auth middleware (see Config).
 
 After each change to an annotation, a model or a DTO, run the builder and start the app again:
 
@@ -37,7 +37,7 @@ dart run build_runner build
 
 ## 2. Config
 
-The installed config has no login. To make clients log in:
+The installed config cannot read the user. Each field is public until it has `guard: true` (see Auth). To let Dox read the user:
 
 1. If the app has no login, run `dox add auth`.
 2. Add the `dox_auth` import to `lib/config/graphql.dart`.
@@ -60,7 +60,6 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
 |---|---|---|
 | `path` | `/graphql` | The URL of the API. |
 | `middleware` | none | Route middleware, for example `AuthMiddleware()`. |
-| `autoResolvers` | `true` | `false` removes the automatic fields of all models. |
 | `graphiql` | on in development | The GraphiQL page at `path`, for a browser. |
 | `introspection` | on in development | The `__schema` and `__type` queries. |
 | `showInternalErrors` | on in development | Sends the real error text to the client. |
@@ -76,11 +75,21 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
 
 ## 3. Models
 
-Put `@GraphQLType()` on a model, and on each model that it has a relation to:
+Put `@GraphQL()` on a model, and on each model that it has a relation to. Then add one annotation for each operation. An operation with no annotation does not exist.
 
 ```dart
+import 'package:dox_auth/dox_auth.dart';
+import 'package:dox_graphql/dox_graphql.dart';
+import 'package:dox_orm/dox_orm.dart';
+
 @DoxModel()
-@GraphQLType(dto: CreatePostDto, policy: PostPolicy, owner: 'userId')
+@GraphQL(filter: Ability.view)
+@GraphQLAll(can: Ability.viewAny)
+@GraphQLPaginate(can: Ability.viewAny)
+@GraphQLFind(can: Ability.view)
+@GraphQLCreate(dto: PostInput, can: Ability.create, guard: true, owner: 'userId')
+@GraphQLUpdate(dto: PostInput, can: Ability.update, guard: true)
+@GraphQLDelete(can: Ability.delete, guard: true)
 class Post extends PostGenerator {
   @Column()
   String? title;
@@ -93,28 +102,35 @@ class Post extends PostGenerator {
 }
 ```
 
-The `id`, the columns and the relations become fields. The model gets these automatic fields:
+The `id`, the columns and the relations become fields.
 
-| Field | Condition | Notes |
+| Annotation | GraphQL field | Notes |
 |---|---|---|
-| `posts(limit, offset)` | always | `limit` has a default of 20. A `limit` above 100 is an error. |
-| `post(id)` | always | `null` if the id is not found. The `id` is an `ID`, for example `"1"`. |
-| `createPost(input)` | `dto:` | The client can set only the DTO fields. |
-| `updatePost(id, input)` | `dto:` and `policy:` | Changes and checks only the sent fields. `null` if the id is not found. |
-| `deletePost(id)` | `dto:` and `policy:` | Gives `true`, or `false` if the id is not found. |
+| `@GraphQL()` | The `Post` type | No query and no mutation. Options: `name:`, `description:`, `guard:`, `filter:`. |
+| `@GraphQLAll()` | `posts(limit, offset)` | `limit` has a default of 20. A `limit` above 100 is an error. |
+| `@GraphQLPaginate()` | `posts(first, page)` | Gives `data` and `paginatorInfo`. The name is `postsPaginate` if the model also has `@GraphQLAll()`. |
+| `@GraphQLFind()` | `post(id)` | `null` if the id is not found. The `id` is an `ID`, for example `"1"`. |
+| `@GraphQLCreate(dto:)` | `createPost(input)` | The client can set only the DTO fields. Option: `owner:`. |
+| `@GraphQLUpdate(dto:)` | `updatePost(id, input)` | Changes and checks only the sent fields. `null` if the id is not found. |
+| `@GraphQLDelete()` | `deletePost(id)` | Gives `true`, or `false` if the id is not found. |
 
-- `auth: true` is only a login check. To control which rows a user can read, give the model a `policy:` with `viewAny` and `view` (see section 5). Put secret columns in `hidden`.
-- `policy:` works without `dto:`. The model then has the guarded reads and no mutations.
-- A field is nullable in the schema when an error can hit it, so an error nulls only that field. Each root field (`Query` and `Mutation`, automatic or your own) is nullable. Each relation is nullable (a policy, a login, the row cap or a database error can fail it). Another field (a plain class field, a getter, a `@ResolveField`) is nullable when it has `auth: true`, or gives a type that can refuse: a type with a `policy:` or `auth: true`, or with no `auth:`. The type decides first. List items stay non-null.
-- `queries: false` removes the list and find queries. The type stays for relations and resolvers.
-- `owner: 'userId'` makes create set that column to the id of the logged-in user. It needs `dto:`. The column must not be a DTO field. Update never changes it. Create, update and delete then need a login.
+Each operation annotation has `name:`, `description:`, `can:` and `guard:`.
+
+- No `guard:` means public. `guard: true` needs a login (see section 5).
+- No `can:` means no policy check. `can:` asks an ability of the policy (see section 5).
+- `@GraphQLUpdate` and `@GraphQLDelete` without `can:` let each caller change or delete each row. The builder gives a warning when one of them has no `can:` and no `guard:`.
+- A model with only `@GraphQL()` is available only through relations and your own resolvers.
+- `paginatorInfo` has `count`, `currentPage`, `firstItem`, `lastItem`, `hasMorePages`, `lastPage`, `perPage` and `total`. `first` has a default of 20 and a maximum of 100. A `first` or a `page` below 1 is an error.
+- `owner: 'userId'` makes create set that column to the id of the logged-in user. Thus, create needs a login. The column must not be a DTO field. Update never changes it.
+- A field is nullable in the schema when an error can hit it, so an error nulls only that field. Each root field (`Query` and `Mutation`, of a model or your own) is nullable. Each relation is nullable. Another field (a plain class field, a getter, a `@GraphQLResolveField`) is nullable when it has `guard: true`, or gives a type with `guard: true`. List items stay non-null.
 - A column or relation in `hidden` of the model is not a field. `hidden` uses the snake_case name of the column or relation, for example `password_hash`, not the Dart field name. If `visibleFields` of the model is not empty, only those names are fields. To hide a different field, put `@GraphQLIgnore()` above its `@Column()`.
 - `@GraphQLField()` on a getter makes a computed field.
 - Dox loads a relation for all parents of the request in one query. A relation that is already loaded runs no query.
+- The build fails if an operation annotation is on a plain class, or on a model with no `@GraphQL()`.
 
 ## 4. Resolvers
 
-Write a resolver when the automatic fields are not sufficient. Put the annotations on methods of a class in `lib/`. The builder finds the class.
+Write a resolver when the fields of the model annotations are not sufficient. Put the annotations on methods of a class in `lib/`. The builder finds the class.
 
 ```dart
 // lib/app/graphql/post.resolver.dart
@@ -123,13 +139,13 @@ class PostResolver {
 
   final PostService postService;
 
-  @GraphQLQuery(auth: false)
+  @GraphQLQuery()
   Future<List<Post>> trendingPosts({int limit = 10}) {
     return postService.trending(limit);
   }
 
-  @GraphQLMutation()
-  Future<Post> importPost(CreatePostDto input) {
+  @GraphQLMutation(guard: true)
+  Future<Post> importPost(PostInput input) {
     return postService.import(input);
   }
 
@@ -147,10 +163,10 @@ class PostResolver {
 - A `DoxGraphQLContext` parameter is not an argument. It gives `request`, `user<T>()`, `auth()`, `make<T>()` and `loader(...)`.
 - Name the annotation `@GraphQLQuery`. `Query` of `dox_core` is for OpenAPI.
 
-`@ResolveField()` adds a field to the type of its first parameter. Use a `DataLoader` so that many parents cause one query:
+`@GraphQLResolveField()` adds a field to the type of its first parameter. Use a `DataLoader` so that many parents cause one query:
 
 ```dart
-@ResolveField()
+@GraphQLResolveField()
 Future<Shop?> shop(Product product, DoxGraphQLContext context) {
   DataLoader<int, Shop> shops = context.loader<int, Shop>(
     'shops',
@@ -162,60 +178,74 @@ Future<Shop?> shop(Product product, DoxGraphQLContext context) {
 
 `findByIds` takes a `List<int>` and returns a `Future<List<Shop?>>` in the same order as the ids.
 
-On a plain Dart class, `@GraphQLType()` makes the public fields the GraphQL fields. A plain class gets no automatic queries.
+On a plain Dart class, `@GraphQL()` makes the public fields the GraphQL fields. A plain class cannot have the operation annotations. Write its queries as resolvers.
 
 ## 5. Auth
 
-The default comes from the config:
+Each field is public by default. `AuthMiddleware()` in `middleware` only reads the user. It never stops the request.
 
-- With `AuthMiddleware()` in `middleware`: each query, mutation and relation needs a login.
-- Without it: all fields are public.
-
-Change the rule with `auth:`:
+### Login: `guard:`
 
 | Code | Result |
 |---|---|
-| `@GraphQLQuery(auth: false)`, `@GraphQLMutation(auth: false)` | That field is public. |
-| `@GraphQLType(auth: false)` | The type is public: its list and find queries, its automatic mutations, and the relations that give it. With `dto:` and no `owner:`, a guest can create rows. |
-| `@GraphQLType(auth: true)` | Each field that gives the type needs a login, also in a public query. |
-| `@GraphQLField(auth: true)`, `@ResolveField(auth: true)` | That field of a type needs a login. |
-| `owner:` | Create always needs a login, also with `auth: false`. |
+| `@GraphQLAll(guard: true)` and the other operation annotations | That query or mutation needs a login. |
+| `@GraphQLQuery(guard: true)`, `@GraphQLMutation(guard: true)` | That field needs a login. |
+| `@GraphQLField(guard: true)`, `@GraphQLResolveField(guard: true)` | That field of a type needs a login. |
+| `@GraphQL(guard: true)` | Each field that gives the type needs a login: its queries, its mutations, the relations to it and your own resolvers. |
+| `owner:` on `@GraphQLCreate` | Create needs a login. |
 
-- A type with `auth: true` is stronger than a field with `auth: false`.
-- A public query does not make its relations public. With `trendingPosts` public, `user` in a post still needs a login.
-- `auth: true` or `owner:` without the auth middleware stops the app at start with a `StateError`.
-- The auth middleware never stops the request. A guest gets an error only for the fields that need a login. The other fields give their data.
+- A guest gets `UNAUTHENTICATED` only for the fields that need a login. The other fields give their data.
+- `guard: true` or `owner:` without the auth middleware stops the app at start with a `StateError`.
 - The client sends `Authorization: Bearer <token>`.
 
-The automatic fields ask a `dox_auth` policy, when the policy lists the ability in `abilities`:
+### Policy: `can:` and `filter:`
 
-| Ability | Guards |
-|---|---|
-| `viewAny` | The list query and each relation to the model. Refused: the field is `null` with `FORBIDDEN`. |
-| `view` | The find query. In lists and relations, Dox removes the rows that `view` refuses, so a list can have fewer rows than `limit`. |
-| `create` | The create mutation. |
-| `update`, `delete` | The update and delete mutations. |
+`can:` is an ability of the `dox_auth` policy of the model. Use the constants `Ability.viewAny`, `Ability.view`, `Ability.create`, `Ability.update` and `Ability.delete`.
 
-Dox reads the keys of `abilities`, not the method names. A guest gets `UNAUTHENTICATED` before Dox reads the database. A missing id gets the same answer as a refused row.
+| Code | The policy method gets | Refused |
+|---|---|---|
+| `@GraphQLAll(can:)`, `@GraphQLPaginate(can:)` | the user | The field is `null` with `FORBIDDEN`. |
+| `@GraphQLFind(can:)` | the user and the row | The field is `null` with `FORBIDDEN`. |
+| `@GraphQLCreate(can:)` | the user | `FORBIDDEN`. Dox does not read the input. |
+| `@GraphQLUpdate(can:)`, `@GraphQLDelete(can:)` | the user and the row | `FORBIDDEN`. Dox writes nothing. |
+| `@GraphQL(filter:)` | the user and each row | No error. Dox hides the row. |
 
-Hand-written `@GraphQLQuery`, `@ResolveField` and getters that return models do not run these checks. Call `Gate` yourself there.
+`@GraphQLAll`, `@GraphQLPaginate` and `@GraphQLCreate` give no row to the policy. Use `Ability.viewAny` or `Ability.create` there, not an ability that needs a row, like `Ability.view` or `Ability.update`.
+
+- A refused guest gets `UNAUTHENTICATED`. A refused user gets `FORBIDDEN`.
+- Find, update and delete ask a missing id as a new, empty row. Thus, a missing id gets the same answer as a refused row.
+- `filter:` hides the refused rows in each field that gives the type. A list leaves the rows out, so it can have fewer rows than `limit`. A single value is `null`.
+- This includes the list, the paged list, the find query, the relations, your own `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField` results, `@GraphQLField` getters, the fields of plain classes, and the results of create and update.
+- With `filter:`, `total` and `lastPage` of `paginatorInfo` also count the hidden rows.
+- `filter:` does not decide a write. Update and delete ask only their `can:`.
+- A row that `filter:` hides can still be updated or deleted when the operation has no `can:`. A created row that `filter:` hides is saved, and the create returns null.
+- `can:` and `filter:` need the auth middleware in the config. Without it, each client is a guest.
 
 This policy lets each user change only their own posts:
 
 ```dart
 class PostPolicy extends Policy<User, Post> {
+  static const String publish = 'publish';
+
   bool update(User user, Post post) => post.userId == user.id;
   bool delete(User user, Post post) => post.userId == user.id;
+  bool canPublish(User user, Post post) => user.editor == true;
 
   @override
   Map<String, Function> get abilities => <String, Function>{
-    'update': update,
-    'delete': delete,
+    Ability.update: update,
+    Ability.delete: delete,
+    publish: canPublish,
   };
 }
 ```
 
-Register it with `Gate.policy<Post>(PostPolicy());` in the `setup()` of a provider. Dox loads the row and asks the policy before it writes.
+- Dox reads the keys of `abilities`, not the method names.
+- For your own ability, write a constant on the policy, and use it: `can: PostPolicy.publish`.
+- Register the policy with `Gate.policy<Post>(PostPolicy());` in the `setup()` of a provider.
+- At start, a `can:` or `filter:` with an ability that the policy does not have stops the app. The error lists the available abilities.
+
+Hand-written `@GraphQLQuery`, `@GraphQLMutation`, `@GraphQLResolveField` and getters get the `filter:` of the type, but no `can:` check. To refuse a user with an error there, call `Gate` yourself.
 
 ## 6. Errors
 
@@ -263,13 +293,17 @@ A field error has status 200 also. Always check `errors`.
 ## Common mistakes
 
 - No `build_runner` after a change. The schema is then old, and the new field does not exist.
-- `@GraphQLType()` on a model, but not on the models of its relations.
-- No auth middleware in `GraphQLConfig.middleware`. The full API is then public, with the automatic create mutations.
-- `dto:` without `policy:`: the model then gets only the create mutation.
-- `@GraphQLType(auth: false)` on a model with `dto:` and no `owner:`. The create mutation is then public also. To make only reads public, keep the default and write a `@GraphQLQuery(auth: false)`, or use `owner:`.
-- A model with private data, for example `User`, without `auth: true`. A public type or an API without the auth middleware then shows it through relations.
-- `auth: true` as the only protection of private rows. It is a login check, not a policy check. Add a policy with `viewAny` and `view`.
-- A policy method that is not in `abilities`. Dox does not see it, so it does not check it.
+- `@GraphQL()` on a model, but not on the models of its relations.
+- Only `@GraphQL()` on a model, and then a query for `posts`. Each operation needs its annotation.
+- `@GraphQLCreate`, `@GraphQLUpdate` or `@GraphQLDelete` with no `guard:` and no `can:`. The mutation is then public.
+- `@GraphQLUpdate` or `@GraphQLDelete` with `guard: true` and no `can:`. Each logged-in user can then change each row.
+- A model with private data, for example `User`, without `@GraphQL(guard: true)`. Relations and resolvers then show it to guests.
+- `guard: true` as the only protection of private rows. It is a login check, not a policy check. Add `can:` and `filter:`.
+- `filter:` as the protection of update and delete. It hides rows only in results.
+- `Ability.view` or `Ability.update` on `@GraphQLAll`, `@GraphQLPaginate` or `@GraphQLCreate`. These get no row. Use `Ability.viewAny` or `Ability.create`.
+- `guard:`, `can:`, `filter:` or `owner:` with no auth middleware in `GraphQLConfig.middleware`.
+- A policy method that is not in `abilities`. The app then stops at start, because `can:` does not find the ability.
+- A policy that is registered after the start, not in the `setup()` of a provider.
 - A secret column that is not in `hidden` and has no `@GraphQLIgnore()`.
 - The owner column as a DTO field. The client must not send it. Use `owner:`.
 - A relation query in a loop in a resolver. Use `context.loader` with a `DataLoader`.

@@ -1,4 +1,4 @@
-import 'package:dox_auth/dox_auth.dart' show Policy;
+import 'package:dox_auth/dox_auth.dart' show Ability, Policy;
 
 import '../models/article/article.model.dart';
 import '../models/member/member.model.dart';
@@ -15,8 +15,8 @@ class PostPolicy extends Policy<String, Post> {
 
   @override
   Map<String, Function> get abilities => <String, Function>{
-    'update': update,
-    'delete': delete,
+    Ability.update: update,
+    Ability.delete: delete,
   };
 }
 
@@ -26,18 +26,22 @@ class MemberPolicy extends Policy<String, Member> {
 
   @override
   Map<String, Function> get abilities => <String, Function>{
-    'update': update,
-    'delete': delete,
+    Ability.update: update,
+    Ability.delete: delete,
   };
 }
 
 class ArticlePolicy extends Policy<String, Article> {
+  /// A custom ability. Article reads it in `@GraphQLUpdate(can:)`, and this
+  /// file imports Article: the builder reads the constant value.
+  static const String edit = 'edit';
+
   bool update(String user, Article article) => _owner(user);
   bool delete(String user, Article article) => _owner(user);
 
   @override
   Map<String, Function> get abilities => <String, Function>{
-    'update': update,
-    'delete': delete,
+    edit: update,
+    Ability.delete: delete,
   };
 }

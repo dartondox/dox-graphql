@@ -6,9 +6,11 @@ import '../doc/doc.model.dart';
 part 'account.model.g.dart';
 
 /// `visibleFields` keeps only these fields. `docs` is a relation to a
-/// model whose policy has `viewAny`.
+/// model with `filter:`.
 @DoxModel(table: 'accounts')
-@GraphQLType()
+@GraphQL()
+@GraphQLAll()
+@GraphQLFind()
 class Account extends AccountGenerator {
   @override
   List<String> get visibleFields => const <String>['id', 'name', 'docs'];

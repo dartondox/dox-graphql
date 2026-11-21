@@ -4,7 +4,7 @@ import 'package:dox_orm/dox_orm.dart';
 part 'image.model.g.dart';
 
 @DoxModel(table: 'images')
-@GraphQLType(queries: false)
+@GraphQL()
 class Image extends ImageGenerator {
   @Column()
   String? url;

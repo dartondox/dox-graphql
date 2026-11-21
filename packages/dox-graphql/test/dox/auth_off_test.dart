@@ -29,14 +29,14 @@ void main() {
     });
   });
 
-  test('auth: true without the auth middleware fails at start', () {
+  test('guard: true without the auth middleware fails at start', () {
     expect(
       () => GraphQLAuth.checkSchema(loginSchema(), const <Object>[]),
       throwsA(
         isA<StateError>().having(
           (StateError e) => e.message,
           'message',
-          contains('field Query.secret has auth: true'),
+          contains('field Query.secret has guard: true'),
         ),
       ),
     );
@@ -44,4 +44,17 @@ void main() {
       FakeLoginMiddleware(),
     ]);
   });
+
+  test('a start check that throws stops the start', () async {
+    GraphQLSchema<DoxGraphQLContext> schema = GraphQLSchema<DoxGraphQLContext>(
+      query: publicSchema.query,
+      startChecks: <void Function()>[_failCheck],
+    );
+    await expectLater(
+      startApp(GraphQLConfig(schema: schema)),
+      throwsA(isA<StateError>()),
+    );
+  });
 }
+
+void _failCheck() => throw StateError('bad ability');

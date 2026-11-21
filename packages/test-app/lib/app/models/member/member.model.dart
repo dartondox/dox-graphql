@@ -1,15 +1,20 @@
+import 'package:dox_auth/dox_auth.dart' show Ability;
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/member_dto.dart';
-import '../../policies/policies.dart';
 import '../profile/profile.model.dart';
 
 part 'member.model.g.dart';
 
 /// `hidden` leaves out a column and a relation.
 @DoxModel(table: 'members')
-@GraphQLType(dto: MemberDto, policy: MemberPolicy, auth: true)
+@GraphQL(guard: true)
+@GraphQLAll()
+@GraphQLFind()
+@GraphQLCreate(dto: MemberDto)
+@GraphQLUpdate(dto: MemberDto, can: Ability.update)
+@GraphQLDelete(can: Ability.delete)
 class Member extends MemberGenerator {
   @override
   List<String> get hidden => <String>['secret', 'profile'];

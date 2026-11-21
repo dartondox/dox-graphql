@@ -49,7 +49,7 @@ final ObjectType<Map<String, Object?>, DoxGraphQLContext> _note =
         Field<Map<String, Object?>, DoxGraphQLContext>(
           'secretBody',
           graphqlString,
-          auth: true,
+          guard: true,
         ),
       ],
     );
@@ -58,7 +58,7 @@ final ObjectType<Map<String, Object?>, DoxGraphQLContext> _note =
 final ObjectType<Map<String, Object?>, DoxGraphQLContext> _account =
     ObjectType<Map<String, Object?>, DoxGraphQLContext>(
       'Account',
-      auth: true,
+      guard: true,
       fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
         Field<Map<String, Object?>, DoxGraphQLContext>('email', graphqlString),
       ],
@@ -68,7 +68,6 @@ final ObjectType<Map<String, Object?>, DoxGraphQLContext> _account =
 final ObjectType<Map<String, Object?>, DoxGraphQLContext> _shop =
     ObjectType<Map<String, Object?>, DoxGraphQLContext>(
       'Shop',
-      auth: false,
       fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
         Field<Map<String, Object?>, DoxGraphQLContext>('name', graphqlString),
         Field<Map<String, Object?>, DoxGraphQLContext>(
@@ -108,7 +107,7 @@ final InterfaceType _thing = InterfaceType(
 final ObjectType<Map<String, Object?>, DoxGraphQLContext> _secretThing =
     ObjectType<Map<String, Object?>, DoxGraphQLContext>(
       'SecretThing',
-      auth: true,
+      guard: true,
       interfaces: <InterfaceType>[_thing],
       fields: () => <Field<Map<String, Object?>, DoxGraphQLContext>>[
         Field<Map<String, Object?>, DoxGraphQLContext>('id', graphqlString),
@@ -141,25 +140,20 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           Field<Object?, DoxGraphQLContext>(
             'open',
             graphqlString,
-            auth: false,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => 'hi',
           ),
           Field<Object?, DoxGraphQLContext>(
             'me',
             graphqlString,
+            guard: true,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 info.context.user<String>(),
           ),
           Field<Object?, DoxGraphQLContext>(
             'count',
             graphqlInt.nonNull,
+            guard: true,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => 1,
-          ),
-          AutoField<Object?, DoxGraphQLContext>(
-            'autoOpen',
-            graphqlString,
-            auth: false,
-            resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => 'a',
           ),
           Field<Object?, DoxGraphQLContext>(
             'shop',
@@ -170,14 +164,12 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           Field<Object?, DoxGraphQLContext>(
             'account',
             _account,
-            auth: false,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 <String, Object?>{'email': 'a@x'},
           ),
           Field<Object?, DoxGraphQLContext>(
             'find',
             _foundType,
-            auth: false,
             args: <Argument>[Argument('id', graphqlString.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 _value(info.args.get<String>('id')!),
@@ -185,14 +177,12 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           Field<Object?, DoxGraphQLContext>(
             'finds',
             _foundType.list,
-            auth: false,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 <Object?>[_value('p'), _value('a')],
           ),
           Field<Object?, DoxGraphQLContext>(
             'node',
             _thing,
-            auth: false,
             args: <Argument>[Argument('id', graphqlString.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 _value(info.args.get<String>('id')!),
@@ -200,7 +190,6 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           Field<Object?, DoxGraphQLContext>(
             'note',
             _note,
-            auth: false,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 <String, Object?>{'title': 't', 'secretBody': 'b'},
           ),
@@ -212,6 +201,7 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
           Field<Object?, DoxGraphQLContext>(
             'write',
             graphqlInt,
+            guard: true,
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
                 ++writes,
           ),
@@ -220,7 +210,7 @@ final GraphQLSchema<DoxGraphQLContext> authSchema =
       types: <NamedType>[_secretThing, _openThing],
     );
 
-/// A root field with no `auth:`.
+/// A root field with no `guard:`.
 final GraphQLSchema<DoxGraphQLContext> publicSchema =
     GraphQLSchema<DoxGraphQLContext>(
       query: ObjectType<Object?, DoxGraphQLContext>(
@@ -235,7 +225,7 @@ final GraphQLSchema<DoxGraphQLContext> publicSchema =
       ),
     );
 
-/// A root field with `auth: true`.
+/// A root field with `guard: true`.
 GraphQLSchema<DoxGraphQLContext> loginSchema() {
   return GraphQLSchema<DoxGraphQLContext>(
     query: ObjectType<Object?, DoxGraphQLContext>(
@@ -244,7 +234,7 @@ GraphQLSchema<DoxGraphQLContext> loginSchema() {
         Field<Object?, DoxGraphQLContext>(
           'secret',
           graphqlString,
-          auth: true,
+          guard: true,
           resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => 's',
         ),
       ],

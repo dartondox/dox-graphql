@@ -21,13 +21,13 @@ class BookResolver {
     return null;
   }
 
-  @GraphQLQuery()
+  @GraphQLQuery(guard: true)
   Future<String?> me(DoxGraphQLContext context) => context.user<String>();
 
   @GraphQLMutation()
   Future<BookItem> createBook(CreateBook input) async => repo.add(input);
 
-  @ResolveField()
+  @GraphQLResolveField()
   Future<Author?> author(BookItem book, DoxGraphQLContext context) {
     DataLoader<int, Author> loader = context.loader<int, Author>(
       'authors',

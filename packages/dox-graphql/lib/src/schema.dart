@@ -19,6 +19,7 @@ final class GraphQLSchema<C> {
     this.mutation,
     List<NamedType> types = const <NamedType>[],
     this.description,
+    this.startChecks = const <void Function()>[],
   }) {
     List<String> problems = <String>[];
     _collect(query, problems);
@@ -47,6 +48,12 @@ final class GraphQLSchema<C> {
   final ObjectType<Object?, C> query;
   final ObjectType<Object?, C>? mutation;
   final String? description;
+
+  /// Checks that `GraphQLProvider` runs when the app starts, after the
+  /// `setup()` of every provider. A check throws to stop the start. The
+  /// code of `dox_graphql_builder` adds one that checks the abilities of
+  /// `can:` and `filter:` against the policies of the app.
+  final List<void Function()> startChecks;
 
   /// Every named type, by name.
   final Map<String, NamedType> typeMap = <String, NamedType>{};

@@ -1,7 +1,70 @@
 ## Unreleased
 
-- Docs: `policy:` works without `dto:`. `owner:` also guards update and
-  delete.
+- One annotation for each operation of a model. A model shows what it
+  gives in its annotations:
+  - `@GraphQLAll` (the list query), `@GraphQLPaginate` (the paged list
+    query), `@GraphQLFind`, `@GraphQLCreate(dto:)`, `@GraphQLUpdate(dto:)`
+    and `@GraphQLDelete`. Each takes `name:`, `description:`, `can:` and
+    `guard:`.
+  - A model with no operation annotation has no query and no mutation.
+  - `can:` is an ability, like `Ability.view` of dox_auth. The resolver
+    asks `Gate.allows` with it. All, Paginate and Create ask it on the
+    model type. Find, Update and Delete ask it on the row. A missing id
+    is asked as a blank row. A denied guest gets `UNAUTHENTICATED`, and
+    a denied user gets `FORBIDDEN`. With no `can:`, the resolver asks
+    nothing.
+    Any error of the policy on the blank row of a missing id is a deny,
+    so a missing id gets the same answer as a denied id.
+  - `owner:` is on `@GraphQLCreate`. The create sets that column to the
+    id of the logged-in user, so it needs a login. Update never changes
+    it. `GraphQLAuth.ownerId` reads the id.
+  - `@GraphQL(filter: ability)`: the lists and the relations to the
+    model drop the rows that the ability denies. A single relation gives
+    null. It hides denied rows everywhere the type appears: the lists,
+    `@GraphQLFind`, relations, the rows that create and update give back,
+    `@GraphQLField` getters, fields of plain classes, and the results of
+    `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField`. A
+    denied row is null, like a missing id, and a list drops it. The
+    filter does not stop update and delete: they ask only their `can:`.
+    A row that `filter:` hides can still be updated or deleted when the
+    operation has no `can:`. A created row that `filter:` hides is saved,
+    and the create returns null.
+    An interface or union field that picks the type is not filtered.
+  - A type with `guard: true` also guards its `<Model>Paginator` and its
+    `@GraphQLDelete` (a Boolean field), so a guest gets
+    `UNAUTHENTICATED` before any query runs.
+- `@GraphQLPaginate` gives `posts(first: Int = 20, page: Int = 1)` with
+  the type `PostPaginator { data, paginatorInfo }`. `PaginatorInfo` has
+  `count`, `currentPage`, `firstItem`, `lastItem`, `hasMorePages`,
+  `lastPage`, `perPage` and `total`. A `first` above 100 is an error.
+  When the model also has `@GraphQLAll`, the name is `postsPaginate`.
+  With `filter:`, `total`, `lastPage`, `firstItem` and `lastItem` also
+  count the rows that the filter drops, because the queries run first.
+  `count` is the number of rows in `data`.
+- `guard: true` needs a logged-in user. It is on `@GraphQL`,
+  `@GraphQLField`, `@GraphQLQuery`, `@GraphQLMutation`,
+  `@GraphQLResolveField`, the operation annotations, `Field` and
+  `ObjectType`. The default is public, also with the auth middleware in
+  `GraphQLConfig.middleware`. A type with `guard: true` needs a login on
+  every field that gives it, also when an interface or union field
+  picks it. A field that needs a login fails with `UNAUTHENTICATED`,
+  and its resolver does not run. Introspection stays public.
+- The auth middleware in `GraphQLConfig.middleware` reads the user. It
+  runs only when a field needs the user. A `guard: true` with no auth
+  middleware stops the start with a `StateError`.
+- When the app starts, `GraphQLProvider.boot()` runs the
+  `GraphQLSchema.startChecks`. The generated schema checks each `can:`
+  and `filter:`. When the model has a policy, the policy must have the
+  ability. A `Gate.define` counts only for a model with no policy. Else the start stops with an error like
+  `@GraphQLFind(can: 'veiw') on Post: PostPolicy has no ability 'veiw'.
+  Available: viewAny, view, create, update, delete.` This needs the
+  dox_auth version with `Gate.policyOf` and `Gate.isDefined`.
+- `@GraphQLType` is now `@GraphQL`, with the same options: `name`,
+  `description`, `guard` and `filter`.
+- `@ResolveField` is now `@GraphQLResolveField`.
+- `AutoField` and `GraphQLConfig(autoResolvers:)` are gone. The builder
+  makes no field by default, so there is nothing to turn off.
+
 - New: `maxRootFields` in `GraphQLConfig` and `GraphQLExecutor`, 50 by
   default. It is the maximum number of top-level fields in one
   operation, after fragments are expanded. Each alias counts. A query
@@ -12,32 +75,16 @@
 - `GraphQLAuth.unauthenticatedError()` gives the `UNAUTHENTICATED` error.
 - `dox add graphql` writes a commented
   `// middleware: <Object>[AuthMiddleware()],` line in
-  `lib/config/graphql.dart`. Without an auth middleware, the API is
-  public.
+  `lib/config/graphql.dart`.
 - Adds the `dox-graphql-guide` skill.
-- New: `owner:` on `@GraphQLType`, like `owner: 'userId'`. The create
-  mutation sets that column to the id of the logged-in user, so a client
-  can not send or change it. Create then always needs a login, even with
-  `auth: false`. A user with no usable id gets an error, and no row is
-  saved. `GraphQLAuth.ownerId` reads the id.
 - `dox add graphql` (`graphql:install`) sets up an app: the packages,
   `lib/config/graphql.dart`, the provider and build_runner. `--no-orm`
   leaves out dox_graphql_orm. It never overwrites a file.
-- Login per field: `auth:` on `@GraphQLType`, `@GraphQLQuery`,
-  `@GraphQLMutation`, `@GraphQLField`, `@ResolveField`, `Field` and
-  `ObjectType`. With the auth middleware in `GraphQLConfig.middleware`,
-  fields need a login by default; without it, they are public. A type
-  with `auth: true` is protected on every field that gives it, also
-  when an interface or union field picks it for its value. A field
-  that needs a login fails with `UNAUTHENTICATED`, and its resolver does
-  not run. Introspection stays public.
 - The auth middleware is found by `IAuthMiddleware` of dox_core. The
   release needs the dox_core version that ships `IAuthMiddleware`; the
   dox_core floor goes up then.
 - The auth middleware runs only when a field needs the user, once per
   request. `DoxGraphQLContext.user<T>()` and `auth()` are now async.
-- `@GraphQLType(policy:)`: a dox_auth policy that guards the update and
-  delete mutations of a model. A denied write fails with `FORBIDDEN`.
 - `GraphQLExecutor(guard:)` takes a `FieldGuard` that checks each field
   before its resolver.
 - In development, the app prints how many fields are public and how many
@@ -85,10 +132,10 @@
 - `GraphQLRequest.extensions`.
 - The engine limit defaults are constants:
   `GraphQLExecutor.defaultMaxDepth` and the others.
-- Annotations for `dox_graphql_builder`: `@GraphQLType`, `@GraphQLField`,
-  `@GraphQLIgnore`, `@GraphQLQuery`, `@GraphQLMutation` and `@ResolveField`.
-- The base class of all types is now `GraphQLTypeRef`, so the name
-  `GraphQLType` is free for the annotation.
+- Annotations for `dox_graphql_builder`: `@GraphQL`, `@GraphQLField`,
+  `@GraphQLIgnore`, `@GraphQLQuery`, `@GraphQLMutation` and
+  `@GraphQLResolveField`.
+- The base class of all types is `GraphQLTypeRef`.
 - `graphqlDateTime`: a `DateTime` scalar, sent as ISO 8601 text in UTC. Input with no
   offset is read as UTC.
 - `GraphQLDto.validate` runs the rules of a `@Dto` on mutation input. A
@@ -96,8 +143,5 @@
   `extensions: {code: VALIDATION_FAILED, fields: {name: message}}`.
 - `GraphQLDto.validateSent`: checks only the keys the client sent, for an
   update. The stored values of the other keys are not checked.
-- `AutoField` and `GraphQLConfig(autoResolvers: false)`: leave out the
-  fields that the builder makes for models, and keep only your own
-  resolvers.
 - `Schema` is now `GraphQLSchema`, so it does not clash with `Schema` of
   dox_core (dox_validation).

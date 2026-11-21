@@ -54,8 +54,10 @@ class GraphQLInstallCommand extends Command {
     await installer.buildRunner();
     installer.printSummary(<String>[
       if (orm) ...<String>[
-        'Add `@GraphQLType()` to a model. Add it to the models it relates '
-            'to as well.',
+        'Add `@GraphQL()` to a model, and one annotation per query or '
+            'mutation, like `@GraphQLAll(can: Ability.viewAny)` and '
+            '`@GraphQLFind(can: Ability.view)`. Add `@GraphQL()` to the '
+            'models it relates to as well.',
         'Run `dart run build_runner build`.',
       ] else ...<String>[
         'Write a plain class and a resolver class with a `@GraphQLQuery()` '
@@ -75,12 +77,14 @@ import 'package:$app/generated/schema.g.dart';
 /// GraphQL settings
 /// -------------------------------
 /// `schema`: made by `dart run build_runner build` from your
-/// `@GraphQLType`, `@GraphQLQuery` and `@GraphQLMutation` annotations.
+/// `@GraphQL`, `@GraphQLAll`, `@GraphQLFind`, `@GraphQLQuery`, ...
+/// annotations.
 /// `path`: the URL of the endpoint, `/graphql` by default.
 /// `middleware`: run before the requests, for example an auth middleware.
 GraphQLConfig graphqlConfig = GraphQLConfig(
   schema: graphqlSchema,
-  // Without an auth middleware, every field of the API is public.
+  // Every field is public unless it has `guard: true`. The auth middleware
+  // reads the user for `guard: true` and `can:`.
   // middleware: <Object>[AuthMiddleware()],
 );
 ''';

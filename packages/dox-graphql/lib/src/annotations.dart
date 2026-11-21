@@ -1,28 +1,46 @@
 /// The annotations that `dox_graphql_builder` reads. The builder writes
 /// `lib/generated/schema.g.dart` with `graphqlSchema` from them.
+///
+/// A model shows what it gives in its annotations. A query or mutation
+/// exists only when its annotation is there:
+///
+/// ```dart
+/// @DoxModel(table: 'posts')
+/// @GraphQL(filter: Ability.view)
+/// @GraphQLAll(can: Ability.viewAny)
+/// @GraphQLPaginate(can: Ability.viewAny)
+/// @GraphQLFind(can: Ability.view)
+/// @GraphQLCreate(dto: PostInput, can: Ability.create, guard: true, owner: 'userId')
+/// @GraphQLUpdate(dto: PostInput, can: Ability.update, guard: true)
+/// @GraphQLDelete(can: Ability.delete, guard: true)
+/// class Post extends PostGenerator {}
+/// ```
+///
+/// `can:` is an ability of the policy of the model. The generated
+/// resolver asks `Gate.allows` before it gives or writes data. A denied
+/// guest gets "Unauthenticated", a denied user "Forbidden". With no
+/// `can:`, nothing is asked. An ability of `Gate.define` counts only for a
+/// model with no registered policy.
+///
+/// `filter:` on `@GraphQL` hides the rows that its ability denies,
+/// everywhere the type appears.
+///
+/// `guard: true` needs a logged-in user. The default is public.
+///
+/// When the app starts, every `can:` and `filter:` is checked: an
+/// ability that the registered policy of the model does not have (a
+/// typo) stops the start with an error. Register the policies in the
+/// `setup()` of a provider.
 library;
 
 /// Makes a GraphQL object type from a class.
 ///
 /// On a model of dox_orm, the columns, `id` and the relations become
-/// fields, and the model gets a list and a find query. On a plain Dart
-/// class, the public fields become fields.
-///
-/// ```dart
-/// @DoxModel()
-/// @GraphQLType(dto: CreatePostDto)
-/// class Post extends PostGenerator {}
-/// ```
-class GraphQLType {
-  const GraphQLType({
-    this.name,
-    this.description,
-    this.queries = true,
-    this.dto,
-    this.auth,
-    this.policy,
-    this.owner,
-  });
+/// fields. On a plain Dart class, the public fields become fields. The
+/// type gets no query by itself: add `@GraphQLAll`, `@GraphQLFind` and
+/// the other operation annotations to a model.
+class GraphQL {
+  const GraphQL({this.name, this.description, this.guard = false, this.filter});
 
   /// The type name. Default: the class name.
   final String? name;
@@ -31,58 +49,185 @@ class GraphQLType {
   /// the class.
   final String? description;
 
-  /// Models only: the list and find queries, like `posts` and `post`.
-  /// False leaves them out, so the model is only reachable through
-  /// relations and custom resolvers.
-  final bool queries;
+  /// True: every field that gives this type needs a logged-in user: the
+  /// queries, the relations and the custom resolvers too. Also an
+  /// interface or union field that picks this type for its value.
+  final bool guard;
 
-  /// Models only: a `@Dto` class. With it, the model gets the create
-  /// mutation (and with [policy] the update and delete mutations), and a
-  /// client can set only the fields of the DTO.
-  final Type? dto;
-
-  /// True: every field that gives this type needs a logged-in user:
-  /// the model queries, relations and custom resolvers too. False: those
-  /// fields are public. Null (default): they need a login only when
-  /// `GraphQLConfig.middleware` has the auth middleware. On a model, it
-  /// also sets the login rule of the delete mutation.
-  final bool? auth;
-
-  /// Models only: a `Policy` of dox_auth for the model, like `PostPolicy`.
-  /// It works without [dto] too: the model then has the guarded reads and
-  /// no mutations. With it and [dto], the model gets the update and delete
-  /// mutations.
-  /// They load the row and ask the policy (`update`, `delete`) before
-  /// they write. A denied write fails with "Forbidden" (code
-  /// `FORBIDDEN`). Register the policy with `Gate.policy<Post>(...)` as
-  /// usual. Without it, the model gets only the create mutation.
+  /// Models only: an ability, like `Ability.view`. It hides the rows that
+  /// `Gate.allows(user, filter, row)` denies everywhere the type appears:
+  /// the lists (`@GraphQLAll`, `@GraphQLPaginate`), `@GraphQLFind`, the
+  /// relations, the rows that `@GraphQLCreate` and `@GraphQLUpdate` give
+  /// back, `@GraphQLField` getters, fields of plain classes, and the
+  /// results of `@GraphQLQuery`, `@GraphQLMutation` and
+  /// `@GraphQLResolveField`. A denied row is null (the same answer as a
+  /// missing id), and a list leaves it out with no error, so a list can
+  /// have fewer rows than its limit.
   ///
-  /// When the registered policy lists the ability `viewAny`, `view` or
-  /// `create` in `abilities` (checked at run time with
-  /// `Gate.hasAbility`), the list query asks `viewAny`, the find query asks `view`,
-  /// a relation to the model asks `viewAny`, and the create mutation asks
-  /// `create`. The list query and the relations drop the rows that `view`
-  /// denies, so a list can have fewer rows than `limit`. A
-  /// denied guest gets "Unauthenticated", a denied user "Forbidden". A
-  /// missing id is checked as a blank row, so a denied user gets the same
-  /// error for an id that exists and one that does not.
+  /// It does not stop a write: `@GraphQLUpdate` and `@GraphQLDelete` ask
+  /// only their `can:`. A row that `filter:` hides can still be updated or
+  /// deleted when the operation has no `can:`. A created row that
+  /// `filter:` hides is saved, and the create returns null. An interface
+  /// or union field that picks this type for its value is not filtered:
+  /// call `Gate` in its resolver.
   ///
-  /// Only the generated fields and relations run these checks. A
-  /// hand-written `@GraphQLQuery`, `@ResolveField` or plain-class getter
-  /// that gives a model must call `Gate` itself.
-  final Type? policy;
+  /// A field can give a filtered model as `M`, `M?`, `List<M>` or
+  /// `List<M>?` only. Another shape stops the build.
+  final String? filter;
+}
 
-  /// Models only: the column of the owner, like `'userId'`. The create
-  /// mutation sets it to the id of the logged-in user, so a client can
-  /// not send or change it. It is not in the input, and the update
-  /// mutation never changes it. Create, update and delete then always
-  /// need a login, even with `auth: false`. It needs [dto], and the column must not be a
-  /// field of the DTO.
-  ///
-  /// ```dart
-  /// @GraphQLType(dto: CreatePostDto, owner: 'userId')
-  /// ```
+/// The list query of a model: `posts(limit: Int = 20, offset: Int = 0)`.
+/// A `limit` above 100 is an error.
+class GraphQLAll {
+  const GraphQLAll({this.name, this.description, this.can, this.guard = false});
+
+  /// The field name. Default: the plural of the type name, like `posts`.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the model type, like `Ability.viewAny`, before
+  /// the query runs. It gets no row, so it must take only the user: a row
+  /// ability like `view` does not fit here.
+  final String? can;
+
+  /// True: the query needs a logged-in user.
+  final bool guard;
+}
+
+/// The paged list query of a model:
+/// `posts(first: Int = 20, page: Int = 1): PostPaginator`, with `data`
+/// and `paginatorInfo`. A `first` above 100 is an error.
+///
+/// The field name is the plural of the type name, like `posts`. When the
+/// model has `@GraphQLAll` too, it is `postsPaginate`.
+class GraphQLPaginate {
+  const GraphQLPaginate({
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+  });
+
+  /// The field name. Default: see the class.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the model type, like `Ability.viewAny`, before
+  /// the query runs. It gets no row, so it must take only the user: a row
+  /// ability like `view` does not fit here.
+  final String? can;
+
+  /// True: the query needs a logged-in user.
+  final bool guard;
+}
+
+/// The find query of a model: `post(id: ID!)`. A missing id gives null.
+class GraphQLFind {
+  const GraphQLFind({
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+  });
+
+  /// The field name. Default: the type name, like `post`.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the row, like `Ability.view`. A missing id is
+  /// asked as a blank row, so a denied user gets the same error for an id
+  /// that exists and one that does not.
+  final String? can;
+
+  /// True: the query needs a logged-in user.
+  final bool guard;
+}
+
+/// The create mutation of a model: `createPost(input: CreatePostInput!)`.
+/// The input is the `@Dto` class [dto]: its rules run before the save,
+/// and a client can set only its fields.
+class GraphQLCreate {
+  const GraphQLCreate({
+    required this.dto,
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+    this.owner,
+  });
+
+  /// A `@Dto` class. Its fields must be columns of the model.
+  final Type dto;
+
+  /// The field name. Default: `create` and the type name.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the model type, like `Ability.create`, before
+  /// the input is read. It gets no row, so it must take only the user: a
+  /// row ability like `update` does not fit here.
+  final String? can;
+
+  /// True: the mutation needs a logged-in user.
+  final bool guard;
+
+  /// The column of the owner, like `'userId'`. The mutation sets it to
+  /// the id of the logged-in user, so it needs a login. The column must
+  /// not be a field of [dto]. `@GraphQLUpdate` never changes it.
   final String? owner;
+}
+
+/// The update mutation of a model:
+/// `updatePost(id: ID!, input: UpdatePostInput!)`. It sets only the
+/// fields that the client sends. A missing id gives null.
+///
+/// Without [can], anyone who may call it can change any row.
+class GraphQLUpdate {
+  const GraphQLUpdate({
+    required this.dto,
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+  });
+
+  /// A `@Dto` class. Its fields must be columns of the model.
+  final Type dto;
+
+  /// The field name. Default: `update` and the type name.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the row, like `Ability.update`, before the
+  /// write. A missing id is asked as a blank row.
+  final String? can;
+
+  /// True: the mutation needs a logged-in user.
+  final bool guard;
+}
+
+/// The delete mutation of a model: `deletePost(id: ID!): Boolean`. False
+/// for a missing id.
+///
+/// Without [can], anyone who may call it can delete any row.
+class GraphQLDelete {
+  const GraphQLDelete({
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+  });
+
+  /// The field name. Default: `delete` and the type name.
+  final String? name;
+  final String? description;
+
+  /// The ability to ask on the row, like `Ability.delete`, before the
+  /// delete. A missing id is asked as a blank row.
+  final String? can;
+
+  /// True: the mutation needs a logged-in user.
+  final bool guard;
 }
 
 /// Leaves a field out of the GraphQL type.
@@ -97,7 +242,7 @@ class GraphQLField {
     this.name,
     this.description,
     this.deprecationReason,
-    this.auth,
+    this.guard = false,
   });
 
   /// The field name. Default: the Dart name.
@@ -107,10 +252,8 @@ class GraphQLField {
   /// Marks the field as deprecated, with this reason.
   final String? deprecationReason;
 
-  /// The default of a field of this type is public, so only true
-  /// matters: the field needs a logged-in user, even when the root field
-  /// above it is public.
-  final bool? auth;
+  /// True: the field needs a logged-in user.
+  final bool guard;
 }
 
 /// Makes a method a root query field. The method name is the field name,
@@ -124,7 +267,7 @@ class GraphQLQuery {
     this.name,
     this.description,
     this.deprecationReason,
-    this.auth,
+    this.guard = false,
   });
 
   /// The field name. Default: the method name.
@@ -132,10 +275,8 @@ class GraphQLQuery {
   final String? description;
   final String? deprecationReason;
 
-  /// True: the field needs a logged-in user. False: the field is public.
-  /// Null (default): it needs a login only when `GraphQLConfig.middleware`
-  /// has the auth middleware.
-  final bool? auth;
+  /// True: the field needs a logged-in user.
+  final bool guard;
 }
 
 /// Makes a method a root mutation field. Take the input as a `@Dto`
@@ -145,7 +286,7 @@ class GraphQLMutation {
     this.name,
     this.description,
     this.deprecationReason,
-    this.auth,
+    this.guard = false,
   });
 
   /// The field name. Default: the method name.
@@ -153,25 +294,23 @@ class GraphQLMutation {
   final String? description;
   final String? deprecationReason;
 
-  /// True: the field needs a logged-in user. False: the field is public.
-  /// Null (default): it needs a login only when `GraphQLConfig.middleware`
-  /// has the auth middleware.
-  final bool? auth;
+  /// True: the field needs a logged-in user.
+  final bool guard;
 }
 
 /// Adds a field to the GraphQL type of the first parameter of the
 /// method. The first parameter is the parent value.
 ///
 /// ```dart
-/// @ResolveField()
+/// @GraphQLResolveField()
 /// Future<User?> author(Post post, DoxGraphQLContext context) { ... }
 /// ```
-class ResolveField {
-  const ResolveField({
+class GraphQLResolveField {
+  const GraphQLResolveField({
     this.name,
     this.description,
     this.deprecationReason,
-    this.auth,
+    this.guard = false,
   });
 
   /// The field name. Default: the method name.
@@ -179,8 +318,6 @@ class ResolveField {
   final String? description;
   final String? deprecationReason;
 
-  /// The default of a field of this type is public, so only true
-  /// matters: the field needs a logged-in user, even when the root field
-  /// above it is public.
-  final bool? auth;
+  /// True: the field needs a logged-in user.
+  final bool guard;
 }

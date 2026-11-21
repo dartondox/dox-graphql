@@ -284,7 +284,7 @@ class Field<S, C> {
     this.args = const <Argument>[],
     this.deprecationReason,
     this._resolve,
-    this.auth,
+    this.guard = false,
   });
 
   final String name;
@@ -294,10 +294,10 @@ class Field<S, C> {
   final String? deprecationReason;
   final FieldResolver<S, C>? _resolve;
 
-  /// True: the field needs a logged-in user. False: the field is public.
-  /// Null: the default of the server. The engine only keeps this value;
-  /// a [FieldGuard] given to the executor checks it.
-  final bool? auth;
+  /// True: the field needs a logged-in user. False (default): it is
+  /// public, unless its type has [ObjectType.guard]. The engine only
+  /// keeps this value; a [FieldGuard] given to the executor checks it.
+  final bool guard;
 
   bool get isDeprecated => deprecationReason != null;
 
@@ -416,15 +416,15 @@ class ObjectType<S, C> extends NamedType {
     required this._fields,
     this.interfaces = const <InterfaceType>[],
     this._isTypeOf,
-    this.auth,
+    this.guard = false,
   });
 
   final List<Field<S, C>> Function() _fields;
 
-  /// True: every field that gives this type needs a logged-in user. False:
-  /// those fields are public. Null: the default of the server. The engine
-  /// only keeps this value; a [FieldGuard] given to the executor checks it.
-  final bool? auth;
+  /// True: every field that gives this type needs a logged-in user.
+  /// False (default): the fields decide. The engine only keeps this
+  /// value; a [FieldGuard] given to the executor checks it.
+  final bool guard;
   final bool Function(Object value)? _isTypeOf;
   final List<InterfaceType> interfaces;
 

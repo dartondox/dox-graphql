@@ -20,7 +20,6 @@ class GraphQLConfig {
     this.introspection,
     this.showInternalErrors,
     this.graphiql,
-    this.autoResolvers = true,
     this.rules = const <ValidationRule>[],
     this.maxDepth = GraphQLExecutor.defaultMaxDepth,
     this.maxQueryLength = GraphQLExecutor.defaultMaxQueryLength,
@@ -40,9 +39,10 @@ class GraphQLConfig {
   /// takes the same kinds as a Dox route: middleware objects and
   /// functions.
   ///
-  /// With the auth middleware (`AuthMiddleware()` of dox_auth) here,
-  /// every root field needs a logged-in user, and `auth: false` makes a
-  /// field public. Without it, every field is public. The auth
+  /// The auth middleware (`AuthMiddleware()` of dox_auth) here is how
+  /// the user is read. It runs only when a field needs the user (a
+  /// `guard: true` or a `can:`). Every field is public unless it has
+  /// `guard: true`, so a field with `guard: true` needs it here. The auth
   /// middleware never stops the request: a guest or a bad token goes on
   /// with no user, and each field that needs a login fails with
   /// "Unauthenticated" (code `UNAUTHENTICATED`). The other fields still
@@ -62,12 +62,6 @@ class GraphQLConfig {
   /// The GraphiQL page at [path], for a browser. Null (default): on when
   /// `APP_ENV` is `development`, else off.
   final bool? graphiql;
-
-  /// The list, find, create, update and delete fields that
-  /// `dox_graphql_builder` makes for models. False leaves them out, so
-  /// the app has only its own `@GraphQLQuery` and `@GraphQLMutation` resolvers. The
-  /// model types stay, for relations and resolvers.
-  final bool autoResolvers;
 
   /// Extra validation rules, run after the rules of the spec.
   final List<ValidationRule> rules;

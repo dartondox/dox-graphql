@@ -49,14 +49,17 @@ void main() {
     'extensions': <String, Object?>{'code': 'UNAUTHENTICATED'},
   };
 
-  test('a guest gets UNAUTHENTICATED on a default field, with 200', () async {
-    TestResponse res = await send('{ me }');
-    expect(res.status, 200);
-    expect(res.json, <String, Object?>{
-      'errors': <Object?>[unauthenticated('me')],
-      'data': <String, Object?>{'me': null},
-    });
-  });
+  test(
+    'a guest gets UNAUTHENTICATED on a guard: true field, with 200',
+    () async {
+      TestResponse res = await send('{ me }');
+      expect(res.status, 200);
+      expect(res.json, <String, Object?>{
+        'errors': <Object?>[unauthenticated('me')],
+        'data': <String, Object?>{'me': null},
+      });
+    },
+  );
 
   test('a logged-in user gets the data', () async {
     TestResponse res = await send('{ me count }', good);
@@ -65,10 +68,10 @@ void main() {
     });
   });
 
-  test('auth: false is public, also on an AutoField', () async {
-    TestResponse res = await send('{ open autoOpen }');
+  test('a field with no guard: is public', () async {
+    TestResponse res = await send('{ open }');
     expect(res.json, <String, Object?>{
-      'data': <String, Object?>{'open': 'hi', 'autoOpen': 'a'},
+      'data': <String, Object?>{'open': 'hi'},
     });
   });
 
@@ -99,7 +102,7 @@ void main() {
     expect(res.json['data'], <String, Object?>{'write': before + 1});
   });
 
-  test('a field of a type is public unless auth: true', () async {
+  test('a field of a type is public unless guard: true', () async {
     TestResponse res = await send('{ note { title secretBody } }');
     expect(res.json['data'], <String, Object?>{
       'note': <String, Object?>{'title': 't', 'secretBody': null},
@@ -137,7 +140,7 @@ void main() {
     expect(FakeLoginMiddleware.runs, 1);
   });
 
-  test('a type with auth: true needs a login everywhere', () async {
+  test('a type with guard: true needs a login everywhere, also on a field with no guard:', () async {
     TestResponse res = await send('{ shop { name owner { email } } }');
     expect(res.json['data'], <String, Object?>{
       'shop': <String, Object?>{'name': 'S', 'owner': null},
@@ -157,10 +160,10 @@ void main() {
   });
 
   test('count gives the public and login fields', () {
-    GraphQLAuth auth = GraphQLAuth(authSchema, loginByDefault: true);
-    // public: open, autoOpen, find, finds, node, note, shop. login: me,
-    // count, account, write, Shop.owner.
-    expect(auth.count(), (7, 5));
+    GraphQLAuth auth = GraphQLAuth(authSchema);
+    // public: open, find, finds, node, note, shop. login: me, count,
+    // account (its type), write, Shop.owner (its type).
+    expect(auth.count(), (6, 5));
   });
 
   group('a union or interface with a protected type |', () {

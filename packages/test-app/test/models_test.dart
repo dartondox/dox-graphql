@@ -1,6 +1,7 @@
 import 'package:dox_core/testing.dart';
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_test_app/generated/schema.g.dart';
+import 'package:dox_orm/dox_orm.dart';
 import 'package:test/test.dart';
 
 import 'db.dart';
@@ -151,14 +152,17 @@ void main() {
       expect(res['errors'], isNotEmpty);
     });
 
-    test('queries: false gives no root query, the relation stays', () async {
-      Map<String, Object?> res = await run(client, '{ comments { body } }');
-      expect(res['errors'], isNotEmpty);
-      res = await run(client, '{ comment(id: "1") { body } }');
-      expect(res['errors'], isNotEmpty);
-      res = await run(client, '{ post(id: "1") { comments { body } } }');
-      expect(res['errors'], isNull);
-    });
+    test(
+      'no operation annotation: no root query, the relation stays',
+      () async {
+        Map<String, Object?> res = await run(client, '{ comments { body } }');
+        expect(res['errors'], isNotEmpty);
+        res = await run(client, '{ comment(id: "1") { body } }');
+        expect(res['errors'], isNotEmpty);
+        res = await run(client, '{ post(id: "1") { comments { body } } }');
+        expect(res['errors'], isNull);
+      },
+    );
   });
 
   group('writes with dto: |', () {
@@ -247,11 +251,54 @@ void main() {
       });
     });
 
-    test('a model without dto: has no mutations', () async {
-      Map<String, Object?> res = await run(
-        client,
-        'mutation { createUser(input: {}) { id } }',
-      );
+    test('a model with no write annotation has no mutations', () async {
+      for (String m in <String>[
+        'createUser(input: {}) { id }',
+        'updateUser(id: "1", input: {}) { id }',
+        'deleteUser(id: "1")',
+      ]) {
+        Map<String, Object?> res = await run(client, 'mutation { $m }');
+        expect(res['errors'], isNotEmpty, reason: m);
+      }
+    });
+
+    test(
+      'filter: on a find with no can: gives null, like a missing id',
+      () async {
+        Future<String> note(String title) async {
+          Map<String, dynamic> row = await QueryBuilder.table('notes')
+              .insert(<String, dynamic>{'title': title, 'user_id': 1});
+          return '${row['id']}';
+        }
+
+        String hidden = await note('hidden');
+        String shown = await note('shown');
+        Map<String, Object?> res = await run(
+          client,
+          '{ a: note(id: "$hidden") { title } b: note(id: "$shown") { title } '
+          'c: note(id: "99999") { title } notes { data { title } } }',
+          user: null,
+        );
+        expect(res, <String, Object?>{
+          'data': <String, Object?>{
+            'a': null,
+            'b': <String, Object?>{'title': 'shown'},
+            'c': null,
+            'notes': <String, Object?>{
+              'data': <Object?>[
+                <String, Object?>{'title': 'shown'},
+              ],
+            },
+          },
+        });
+        await QueryBuilder.table('notes').delete();
+      },
+    );
+
+    test('only @GraphQLPaginate: the paged list has the plural name', () async {
+      Map<String, Object?> res = await run(client, '{ notes { data { id } } }');
+      expect(res['errors'], isNull);
+      res = await run(client, '{ notesPaginate { data { id } } }');
       expect(res['errors'], isNotEmpty);
     });
   });

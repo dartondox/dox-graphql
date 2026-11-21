@@ -68,14 +68,21 @@ class FakeAuthMiddleware implements IAuthMiddleware {
   }
 }
 
-/// Starts the app with the generated schema.
-Future<DoxTestClient> startApp(GraphQLConfig config) {
-  Env().env = <String, String>{};
+/// Registers the policies of the app. False [article] leaves out the
+/// policy of Article.
+void registerPolicies({bool article = true}) {
   Gate.policy<Post>(PostPolicy());
   Gate.policy<Member>(MemberPolicy());
-  Gate.policy<Article>(ArticlePolicy());
+  if (article) Gate.policy<Article>(ArticlePolicy());
   Gate.policy<Note>(NotePolicy());
   Gate.policy<Doc>(DocPolicy());
+}
+
+/// Starts the app with the generated schema. False [policies] registers
+/// no policy: the test does it.
+Future<DoxTestClient> startApp(GraphQLConfig config, {bool policies = true}) {
+  Env().env = <String, String>{};
+  if (policies) registerPolicies();
   return DoxTestClient.start(
     AppConfig(
       appKey: 'graphql-test-key-0123456789abcd!',

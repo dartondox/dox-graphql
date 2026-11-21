@@ -86,7 +86,7 @@ void main() {
     expect(sql.toUpperCase(), contains(' LIMIT '));
   });
 
-  // Tag has `auth: false` and no policy: it never refuses, but the cap can
+  // Tag has no guard: and no filter: it never refuses, but the cap can
   // still fail the relation, so the field is nullable
   test('ManyToMany over the cap is an error', () async {
     Map<String, Object?> res = await run(
