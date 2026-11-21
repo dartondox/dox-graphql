@@ -354,11 +354,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
             _tDoc,
             args: <Argument>[Argument('input', _iCreateDocInput.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _filterOne<i5.Doc>(
-                  info,
-                  'view',
-                  Future<i5.Doc?>.value(_createDoc(info)),
-                ),
+                _createDoc(info),
           ),
           Field<Object?, DoxGraphQLContext>(
             'updateDoc',
@@ -414,11 +410,7 @@ final GraphQLSchema<DoxGraphQLContext> graphqlSchema =
             guard: true,
             args: <Argument>[Argument('input', _iCreateNoteInput.nonNull)],
             resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
-                _filterOne<i8.Note>(
-                  info,
-                  'view',
-                  Future<i8.Note?>.value(_createNote(info)),
-                ),
+                _createNote(info),
           ),
           Field<Object?, DoxGraphQLContext>(
             'updateNote',
