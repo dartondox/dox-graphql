@@ -242,6 +242,56 @@ class Post {
       expect(out, contains(flat("'author', _tUser,")));
     });
 
+    test('a resolver that gives a type that can refuse is nullable', () async {
+      String out = flat(
+        await _build('''
+@GraphQLType(auth: true)
+class Secret {
+  final String name = '';
+}
+
+@GraphQLType(auth: false)
+class Open {
+  final String name = '';
+}
+
+@GraphQLType()
+class Page {
+  final String title = '';
+}
+
+class PageResolver {
+  @GraphQLQuery()
+  Secret secret() => Secret();
+  @GraphQLQuery()
+  List<Secret> secrets() => <Secret>[];
+  @GraphQLQuery()
+  Open open() => Open();
+  @GraphQLQuery(auth: true)
+  Open locked() => Open();
+  @GraphQLMutation()
+  Page makePage() => Page();
+  @ResolveField()
+  Secret secretOf(Page page) => Secret();
+  @ResolveField()
+  Open openOf(Page page) => Open();
+}
+'''),
+      );
+      for (String name in <String>[
+        'secret',
+        'locked',
+        'makePage',
+        'secretOf',
+      ]) {
+        expect(out, matches(RegExp("\\('$name',_t\\w+,")), reason: name);
+      }
+      expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
+      // a public type never refuses
+      expect(out, contains(flat("'open', _tOpen.nonNull,")));
+      expect(out, contains(flat("'openOf', _tOpen.nonNull,")));
+    });
+
     test('a field or getter that gives a type that can refuse is '
         'nullable', () async {
       String out = flat(

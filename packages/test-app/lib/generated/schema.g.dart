@@ -205,7 +205,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'books',
-        _tBook.nonNull.list.nonNull,
+        _tBook.nonNull.list,
         description: 'The latest books.',
         args: <Argument>[
           Argument('limit', graphqlInt.nonNull, defaultValue: '20'),
@@ -269,7 +269,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'postsWithUsers',
-        _tPost.nonNull.list.nonNull,
+        _tPost.nonNull.list,
         description: 'The posts, with their users preloaded.',
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
             i23.PostResolver(info.context.make<i22.PostService>())
@@ -417,7 +417,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'createBook',
-        _tBook.nonNull,
+        _tBook,
         args: <Argument>[Argument('input', _iCreateBookInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) async =>
             i19.BookResolver(

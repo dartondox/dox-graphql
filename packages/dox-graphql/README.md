@@ -50,8 +50,9 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   `Post`. A relation can fail on a policy, a login, the row cap or a
   database error. Then only that field is null. The parent keeps its
   other fields. The list items stay non-null: a policy drops a row.
-- A field of a plain class (or a getter) that gives a type is nullable
-  too, when the type can refuse. It can refuse when it has a `policy:`
+- A field of a plain class, a getter, and a `@GraphQLQuery`,
+  `@GraphQLMutation` or `@ResolveField` method that gives a type are
+  nullable too, when the type can refuse. It can refuse when it has a `policy:`
   or `auth: true`, or when it has no `auth:` (the app default can need a
   login). A type with `auth: false` and no policy is public. Then the
   field is public too, unless the field has `auth: true`.

@@ -955,6 +955,11 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
 
     DartType returnType = _unwrapFuture(method.returnType);
     String type = _outputType(returnType, where, method);
+    bool? methodAuth = ann.getField('auth')?.toBoolValue();
+    // a refusal must null only this field, not the parent (or `data`)
+    if (type.endsWith('.nonNull') && _mayRefuse(returnType, methodAuth)) {
+      type = type.substring(0, type.length - '.nonNull'.length);
+    }
     FieldSpec field = FieldSpec(
       name: name,
       type: type,
@@ -962,7 +967,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
       where: where,
       description: _string(ann, 'description') ?? docOf(method),
       deprecationReason: _string(ann, 'deprecationReason'),
-      auth: ann.getField('auth')?.toBoolValue(),
+      auth: methodAuth,
       args: args,
       isAsync: isAsync,
     );

@@ -141,6 +141,17 @@ void main() {
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
 
+    test('a refused root field is null, the other root fields stay', () async {
+      // `books` gives a type that needs a login by default
+      Map<String, Object?> res = await run(
+        client,
+        '{ path books { id } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{'path': '/graphql', 'books': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
     test('a request that does not need the user runs no login', () async {
       FakeAuthMiddleware.runs = 0;
       await run(client, '{ path article(id: "1") { title } }');
