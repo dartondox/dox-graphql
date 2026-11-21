@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // Made by dox_graphql_builder. Run `dart run build_runner build`.
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, unused_element
 
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_graphql_orm/dox_graphql_orm.dart';

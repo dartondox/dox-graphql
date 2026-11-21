@@ -127,7 +127,8 @@ void _checkAbility<M>(String annotation, String model, String ability) {
       ..writeln(
         '// Made by dox_graphql_builder. Run `dart run build_runner build`.',
       )
-      ..writeln('// ignore_for_file: type=lint')
+      // the `can:` helpers are written as one block: some may be unused
+      ..writeln('// ignore_for_file: type=lint, unused_element')
       ..writeln()
       ..writeln("import 'package:dox_graphql/dox_graphql.dart';");
     if (reader.hasModels) {
