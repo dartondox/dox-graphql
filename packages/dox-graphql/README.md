@@ -46,16 +46,18 @@ GraphQLConfig graphqlConfig = GraphQLConfig(
   `UNAUTHENTICATED` before any database read.
 - `policy:` also works without `dto:`. The model then has the guarded
   reads and no mutations.
-- A relation is always nullable in the schema, like `[Comment!]` and
-  `Post`. A relation can fail on a policy, a login, the row cap or a
-  database error. Then only that field is null. The parent keeps its
-  other fields. The list items stay non-null: a policy drops a row.
-- A field of a plain class, a getter, and a `@GraphQLQuery`,
-  `@GraphQLMutation` or `@ResolveField` method that gives a type are
-  nullable too, when the type can refuse. It can refuse when it has a `policy:`
-  or `auth: true`, or when it has no `auth:` (the app default can need a
-  login). A type with `auth: false` and no policy is public. Then the
-  field is public too, unless the field has `auth: true`.
+- A schema field is nullable when an error can hit it. Then an error
+  nulls only that field, and the parent (or `data`) keeps its other
+  fields. The rule:
+  - Each root field (`Query` and `Mutation`, automatic or your own) is
+    nullable, with any type.
+  - Each relation is nullable. It can fail on a policy, a login, the row
+    cap or a database error.
+  - Another field (a plain class field, a getter, a `@ResolveField`) is
+    nullable when it has `auth: true`, or gives a type that can refuse.
+    A type can refuse when it has a `policy:` or `auth: true`, or has no
+    `auth:` (the app default can need a login). The type decides first.
+  - List items stay non-null: a policy drops a row.
 - The policy can also guard the reads and the create. GraphQL asks Gate
   at run time which abilities the registered policy lists in
   `abilities`. The keys must be `viewAny`, `view` and `create`. The

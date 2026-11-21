@@ -84,7 +84,7 @@ void main() {
         'mutation { deleteMember(id: "2") }',
         user: null,
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'deleteMember': null});
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
       res = await run(client, '{ member(id: "2") { name } }');
       expect(res['data'], <String, Object?>{
@@ -141,6 +141,16 @@ void main() {
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
 
+    test('a guest keeps a public root field next to an auto list', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ path users { id } }',
+        user: null,
+      );
+      expect(res['data'], <String, Object?>{'path': '/graphql', 'users': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
     test('a refused root field is null, the other root fields stay', () async {
       // `books` gives a type that needs a login by default
       Map<String, Object?> res = await run(
@@ -187,7 +197,7 @@ void main() {
         'mutation { deletePost(id: "2") }',
         user: 'intruder',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'deletePost': null});
       expect(_codes(res), <Object?>['FORBIDDEN']);
       res = await run(client, '{ post(id: "2") { title } }', user: null);
       expect(res['data'], <String, Object?>{
@@ -201,7 +211,7 @@ void main() {
         client,
         'mutation { createNote(input: {title: "x"}) { id } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createNote': null});
       expect(
         ((res['errors'] as List<Object?>).single
             as Map<String, Object?>)['message'],

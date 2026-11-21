@@ -43,7 +43,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
     fields: () => <Field<Object?, DoxGraphQLContext>>[
       AutoField<Object?, DoxGraphQLContext>(
         'accounts',
-        _tAccount.nonNull.list.nonNull,
+        _tAccount.nonNull.list,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
           Argument('offset', graphqlInt, defaultValue: '0'),
@@ -63,7 +63,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'articles',
-        _tArticle.nonNull.list.nonNull,
+        _tArticle.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -87,7 +87,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'docs',
-        _tDoc.nonNull.list.nonNull,
+        _tDoc.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -111,7 +111,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'members',
-        _tMember.nonNull.list.nonNull,
+        _tMember.nonNull.list,
         auth: true,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -135,7 +135,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'notes',
-        _tNote.nonNull.list.nonNull,
+        _tNote.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -159,7 +159,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'posts',
-        _tPost.nonNull.list.nonNull,
+        _tPost.nonNull.list,
         auth: false,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -183,7 +183,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'users',
-        _tUser.nonNull.list.nonNull,
+        _tUser.nonNull.list,
         auth: true,
         args: <Argument>[
           Argument('limit', graphqlInt, defaultValue: '20'),
@@ -237,7 +237,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'rowSums',
-        graphqlInt.nonNull.list.nonNull,
+        graphqlInt.nonNull.list,
         description: 'The sum of each row.',
         args: <Argument>[
           Argument('rows', graphqlInt.nonNull.list.nonNull.list.nonNull),
@@ -260,7 +260,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       Field<Object?, DoxGraphQLContext>(
         'path',
-        graphqlString.nonNull,
+        graphqlString,
         description:
             'The path of the request. Public, even with the auth middleware.',
         auth: false,
@@ -282,7 +282,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
     fields: () => <Field<Object?, DoxGraphQLContext>>[
       AutoField<Object?, DoxGraphQLContext>(
         'createArticle',
-        _tArticle.nonNull,
+        _tArticle,
         auth: false,
         args: <Argument>[Argument('input', _iCreateArticleInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -301,7 +301,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteArticle',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -309,7 +309,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createDoc',
-        _tDoc.nonNull,
+        _tDoc,
         auth: false,
         args: <Argument>[Argument('input', _iCreateDocInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -328,7 +328,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteDoc',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -336,7 +336,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createMember',
-        _tMember.nonNull,
+        _tMember,
         auth: true,
         args: <Argument>[Argument('input', _iCreateMemberInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -355,7 +355,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteMember',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -363,7 +363,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createNote',
-        _tNote.nonNull,
+        _tNote,
         auth: true,
         args: <Argument>[Argument('input', _iCreateNoteInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -382,7 +382,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deleteNote',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: true,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -390,7 +390,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'createPost',
-        _tPost.nonNull,
+        _tPost,
         auth: false,
         args: <Argument>[Argument('input', _iCreatePostInput.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>
@@ -409,7 +409,7 @@ graphqlSchema = GraphQLSchema<DoxGraphQLContext>(
       ),
       AutoField<Object?, DoxGraphQLContext>(
         'deletePost',
-        graphqlBoolean.nonNull,
+        graphqlBoolean,
         auth: false,
         args: <Argument>[Argument('id', graphqlId.nonNull)],
         resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) =>

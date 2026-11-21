@@ -1,14 +1,16 @@
 ## Unreleased
 
-- Fix: a relation is now always nullable. Before, a refused relation
-  (a policy, a login, the row cap or a database error) made the whole
-  parent null. Now only that field is null. List items stay non-null: a
-  refused row is dropped.
-- Fix: a field or getter of a plain class, and a `@GraphQLQuery`,
-  `@GraphQLMutation` or `@ResolveField` method, that gives a type is
-  nullable when the type can refuse. It has a `policy:` or `auth: true`, or it has
-  no `auth:`. The type decides first. A type with `auth: false` and no
-  policy is public, unless the field has `auth: true`.
+- Fix: a schema field is nullable when an error can hit it. Before, a
+  refused field made the whole parent (or all of `data`) null. Now only
+  that field is null. List items stay non-null: a refused row is
+  dropped. The rule:
+  - Each root field (`Query` and `Mutation`, automatic or your own) is
+    nullable, with any type.
+  - Each relation is nullable.
+  - Another field (a plain class field, a getter, a `@ResolveField`) is
+    nullable when it has `auth: true`, or gives a type that can refuse.
+    A type can refuse when it has a `policy:` or `auth: true`, or has no
+    `auth:`. The type decides first.
 - Fix: the update and delete mutations of a model with `owner:` need a
   login, like create. A guest gets `UNAUTHENTICATED` before the lookup.
 - `policy:` now works without `dto:`. The model has the guarded reads

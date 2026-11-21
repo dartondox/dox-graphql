@@ -155,7 +155,7 @@ void main() {
       Map<String, Object?> res = await send(
         'mutation { createNote(input: {title: "Guest"}) { id } }',
       );
-      expect(res['data'], isNull);
+      expect(res['data'], <String, Object?>{'createNote': null});
       expect(code(res), 'UNAUTHENTICATED');
       expect(await count(), before);
       // reading stays public

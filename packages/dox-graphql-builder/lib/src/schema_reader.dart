@@ -771,13 +771,10 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     String gql = _outputType(_unwrapFuture(type), where, member);
     bool? fieldAuth = field?.getField('auth')?.toBoolValue();
     // A relation can fail on its own (a policy, a login, the row cap, a
-    // database error). A field that gives another type can be refused too.
-    // A non-null field would null the parent then, so the field is
-    // nullable. List items stay non-null: a policy drops a row, it does not
-    // null it.
-    if (gql.endsWith('.nonNull') && (relation || _mayRefuse(type, fieldAuth))) {
-      gql = gql.substring(0, gql.length - '.nonNull'.length);
-    }
+    // database error), so it is always nullable. Another field is nullable
+    // when it can be refused. A non-null field would null the parent. List
+    // items stay non-null: a policy drops a row, it does not null it.
+    if (relation || _mayRefuse(type, fieldAuth)) gql = _nullable(gql);
     _addField(
       spec.fields,
       FieldSpec(
@@ -795,8 +792,9 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     );
   }
 
-  /// True when a field of Dart type [type] gives a registered type that
-  /// can be refused at run time. The type decides first, like
+  /// True when a field can be refused at run time, so it must be nullable.
+  /// That is true for `auth: true` on the field, and for a field that
+  /// gives a registered type that can refuse. The type decides first, like
   /// `GraphQLAuth.needsLogin`: a `policy:` or `auth: true` on the type
   /// refuses, and `auth: false` on the type (with no policy) is public
   /// unless the field has `auth: true`. Else the `auth:` of the field
@@ -804,6 +802,7 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
   /// when the app has an auth middleware). It is not known here, so the
   /// field may refuse.
   bool _mayRefuse(DartType type, bool? fieldAuth) {
+    if (fieldAuth == true) return true;
     DartType related = _unwrapFuture(type);
     if (related is InterfaceType && related.isDartCoreList) {
       related = related.typeArguments.first;
@@ -956,10 +955,8 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
     DartType returnType = _unwrapFuture(method.returnType);
     String type = _outputType(returnType, where, method);
     bool? methodAuth = ann.getField('auth')?.toBoolValue();
-    // a refusal must null only this field, not the parent (or `data`)
-    if (type.endsWith('.nonNull') && _mayRefuse(returnType, methodAuth)) {
-      type = type.substring(0, type.length - '.nonNull'.length);
-    }
+    // a root field is made nullable in _addField
+    if (_mayRefuse(returnType, methodAuth)) type = _nullable(type);
     FieldSpec field = FieldSpec(
       name: name,
       type: type,
@@ -1273,7 +1270,20 @@ Future<bool> _delete$name(ResolveInfo<DoxGraphQLContext> info) async {$guest
         );
       }
     }
+    // A root field is always nullable: an error (login, policy, DTO,
+    // database) then nulls only this field, not all of `data`.
+    if (identical(fields, query) || identical(fields, mutation)) {
+      field.type = _nullable(field.type);
+    }
     fields.add(field);
+  }
+
+  /// [type] without its outer `.nonNull`. List items stay non-null.
+  static String _nullable(String type) {
+    const String suffix = '.nonNull';
+    return type.endsWith(suffix)
+        ? type.substring(0, type.length - suffix.length)
+        : type;
   }
 
   void _claimTypeName(String name, String where, Element element) {

@@ -139,6 +139,29 @@ class Post extends Model<Post> {
       expect(out, isNot(contains('notAColumn')));
     });
 
+    test('every auto root field is nullable, the list items are not', () async {
+      String out = flat(
+        await _build('''
+$_user
+class PostPolicy extends Policy<User?, Post> {
+  @override
+  Map<String, Function> get abilities => <String, Function>{};
+}
+
+@DoxModel()
+@GraphQLType(dto: CreatePostDto, policy: PostPolicy)
+class Post extends Model<Post> {
+  @Column()
+  String? title;
+}
+''', dto: _titleDto),
+      );
+      expect(out, matches(RegExp("\\('posts',_tPost.nonNull.list,")));
+      expect(out, matches(RegExp("\\('createPost',_tPost,")));
+      expect(out, matches(RegExp("\\('updatePost',_tPost,")));
+      expect(out, matches(RegExp("\\('deletePost',graphqlBoolean,")));
+    });
+
     test('the list and find queries', () async {
       String out = flat(await _build(_user));
       expect(
@@ -146,7 +169,7 @@ class Post extends Model<Post> {
         contains(
           flat(
             "AutoField<Object?, DoxGraphQLContext>('users', "
-            '_tUser.nonNull.list.nonNull, args: <Argument>['
+            '_tUser.nonNull.list, args: <Argument>['
             "Argument('limit', graphqlInt, defaultValue: '20'),"
             "Argument('offset', graphqlInt, defaultValue: '0'),], "
             'resolve: (Object? _, ResolveInfo<DoxGraphQLContext> info) => '
@@ -274,7 +297,7 @@ class Post extends Model<Post> {
         contains(
           flat(
             "AutoField<Object?, DoxGraphQLContext>('createPost', "
-            "_tPost.nonNull, args: <Argument>[Argument('input', "
+            "_tPost, args: <Argument>[Argument('input', "
             '_iCreatePostInput.nonNull)], resolve: (Object? _, '
             'ResolveInfo<DoxGraphQLContext> info) => _createPost(info))',
           ),
@@ -295,7 +318,7 @@ class Post extends Model<Post> {
         contains(
           flat(
             "AutoField<Object?, DoxGraphQLContext>('deletePost', "
-            'graphqlBoolean.nonNull,',
+            'graphqlBoolean,',
           ),
         ),
       );

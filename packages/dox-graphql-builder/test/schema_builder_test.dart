@@ -287,10 +287,48 @@ class PageResolver {
         expect(out, matches(RegExp("\\('$name',_t\\w+,")), reason: name);
       }
       expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
-      // a public type never refuses
-      expect(out, contains(flat("'open', _tOpen.nonNull,")));
+      // a root field is always nullable, a @ResolveField only when it may
+      // refuse
+      expect(out, matches(RegExp("\\('open',_tOpen,")));
       expect(out, contains(flat("'openOf', _tOpen.nonNull,")));
     });
+
+    test(
+      'every root field is nullable, a scalar with auth: true too',
+      () async {
+        String out = flat(
+          await _build('''
+$_hello
+class R {
+  @GraphQLQuery()
+  int count() => 1;
+  @GraphQLQuery(auth: true)
+  String me() => 'x';
+  @GraphQLMutation()
+  bool flip() => true;
+  @GraphQLQuery()
+  List<String> names() => <String>[];
+}
+
+@GraphQLType(auth: false)
+class Page {
+  final String title = '';
+  final String plain = '';
+  @GraphQLField(auth: true)
+  String get secret => 's';
+}
+'''),
+        );
+        expect(out, matches(RegExp("\\('count',graphqlInt,")));
+        expect(out, matches(RegExp("\\('me',graphqlString,")));
+        expect(out, matches(RegExp("\\('flip',graphqlBoolean,")));
+        expect(out, contains(flat("'names', graphqlString.nonNull.list,")));
+        // a scalar that needs a login can be refused: nullable
+        expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+        // a scalar that needs no login stays non-null
+        expect(out, contains(flat("'plain', graphqlString.nonNull,")));
+      },
+    );
 
     test('a field or getter that gives a type that can refuse is '
         'nullable', () async {
@@ -373,7 +411,7 @@ class PostResolver {
         contains(
           flat(
             "Field<Object?, DoxGraphQLContext>('posts', "
-            "graphqlString.nonNull.list.nonNull, description: 'The posts.', "
+            "graphqlString.nonNull.list, description: 'The posts.', "
             'args: <Argument>['
             "Argument('id', graphqlInt.nonNull),"
             "Argument('limit', graphqlInt.nonNull, defaultValue: '10'),"
@@ -421,9 +459,7 @@ class R {
       );
       expect(
         out,
-        contains(
-          flat("'greeting', graphqlString.nonNull, description: 'Says hi.',"),
-        ),
+        contains(flat("'greeting', graphqlString, description: 'Says hi.',")),
       );
       expect(out, isNot(contains('mutation:')));
     });
@@ -850,16 +886,10 @@ class BookResolver {
 }
 '''),
       );
-      expect(
-        out,
-        contains(flat("'open', graphqlString.nonNull, auth: false,")),
-      );
-      expect(out, contains(flat("'plain', graphqlString.nonNull, resolve:")));
-      expect(out, contains(flat("'write', graphqlInt.nonNull, auth: true,")));
-      expect(
-        out,
-        contains(flat("'secret', graphqlString.nonNull, auth: true,")),
-      );
+      expect(out, contains(flat("'open', graphqlString, auth: false,")));
+      expect(out, contains(flat("'plain', graphqlString, resolve:")));
+      expect(out, contains(flat("'write', graphqlInt, auth: true,")));
+      expect(out, contains(flat("'secret', graphqlString, auth: true,")));
     });
   });
 }

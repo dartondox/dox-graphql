@@ -33,7 +33,7 @@ class FieldSpec {
   final String name;
 
   /// The GraphQL type as code.
-  final String type;
+  String type;
 
   /// The body of the resolver: an expression with `s` (the parent) and
   /// `info`.
