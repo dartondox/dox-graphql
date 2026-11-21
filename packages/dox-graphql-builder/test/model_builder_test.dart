@@ -863,6 +863,42 @@ class TitleDto {
       );
     });
 
+    test('a filtered model in a nested list', () async {
+      await expectError(
+        '''
+@DoxModel(table: 'notes')
+@GraphQL(filter: 'view')
+class Note extends Model<Note> {}
+
+@GraphQL()
+class Group {
+  final List<List<Note>> grouped = <List<Note>>[];
+}
+''',
+        'Group.grouped: it gives List<List<Note>>, but Note has filter:. A '
+            'filtered model can be given as Note, Note?, List<Note> or '
+            'List<Note>? only.',
+      );
+    });
+
+    test('a filtered model in a list with nullable items', () async {
+      await expectError(
+        '''
+@DoxModel(table: 'notes')
+@GraphQL(filter: 'view')
+class Note extends Model<Note> {}
+
+class R {
+  @GraphQLQuery()
+  Future<List<Note?>> notes() async => <Note?>[];
+}
+''',
+        'R.notes: it gives List<Note?>, but Note has filter:. A filtered '
+            'model can be given as Note, Note?, List<Note> or List<Note>? '
+            'only.',
+      );
+    });
+
     test('an operation on a plain class', () async {
       await expectError('''
 @GraphQL()

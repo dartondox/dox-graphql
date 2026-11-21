@@ -218,6 +218,7 @@ Each field is public by default. `AuthMiddleware()` in `middleware` only reads t
 - This includes the list, the paged list, the find query, the relations, your own `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField` results, `@GraphQLField` getters, the fields of plain classes, and the results of create and update.
 - With `filter:`, `total` and `lastPage` of `paginatorInfo` also count the hidden rows.
 - `filter:` does not decide a write. Update and delete ask only their `can:`.
+- A row that `filter:` hides can still be updated or deleted when the operation has no `can:`. A created row that `filter:` hides is saved, and the create returns null.
 - `can:` and `filter:` need the auth middleware in the config. Without it, each client is a guest.
 
 This policy lets each user change only their own posts:

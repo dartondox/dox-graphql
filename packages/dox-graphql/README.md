@@ -102,6 +102,9 @@ has no query and no mutation.
   - `total` and `lastPage` of `paginatorInfo` also count the hidden rows.
   - The filter does not decide a write. Update and delete ask only
     their `can:`.
+  - A row that `filter:` hides can still be updated or deleted when the
+    operation has no `can:`. A created row that `filter:` hides is
+    saved, and the create returns null.
 - The builder gives a warning when `@GraphQLUpdate` or `@GraphQLDelete`
   has no `can:` and no `guard:`.
 - For your own ability, write a constant on the policy, like

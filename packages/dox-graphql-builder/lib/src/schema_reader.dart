@@ -695,7 +695,12 @@ Future<$model> _create$name(ResolveInfo<DoxGraphQLContext> info) async {$allow
         type: '${spec.variable}.nonNull',
         description: op.description,
         args: <ArgSpec>[ArgSpec('input', '${input.variable}.nonNull')],
-        resolve: _filtered(element.thisType, '_create$name(info)'),
+        resolve: _filtered(
+          element.thisType,
+          '_create$name(info)',
+          '@GraphQLCreate on ${element.displayName}',
+          element,
+        ),
         where: '@GraphQLCreate on ${element.displayName}',
         // the owner is the logged-in user, so there must be one
         guard: op.guard || owner != null,
@@ -760,7 +765,12 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
         type: spec.variable,
         description: op.description,
         args: <ArgSpec>[idArg, ArgSpec('input', '${input.variable}.nonNull')],
-        resolve: _filtered(element.thisType, '_update$name(info)'),
+        resolve: _filtered(
+          element.thisType,
+          '_update$name(info)',
+          '@GraphQLUpdate on ${element.displayName}',
+          element,
+        ),
         where: '@GraphQLUpdate on ${element.displayName}',
         guard: op.guard,
       ),
@@ -923,7 +933,7 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       FieldSpec(
         name: name,
         type: gql,
-        resolve: resolve ?? _filtered(type, 's.$dartName'),
+        resolve: resolve ?? _filtered(type, 's.$dartName', where, member),
         where: where,
         description: _string(field, 'description') ?? docOf(member),
         deprecationReason: _string(field, 'deprecationReason'),
@@ -956,19 +966,40 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
   /// with the `filter:` of the model it gives, when it has one: a denied
   /// row is null, and a list drops the denied rows. The `filter:` is a rule
   /// of the type, so every field that gives the model runs it.
-  String _filtered(DartType type, String resolve) {
+  ///
+  /// A filtered model can be given only as `M`, `M?`, `List<M>` or
+  /// `List<M>?`. Another shape (`List<M?>`, `List<List<M>>`) stops the
+  /// build: its rows could not be filtered. [where] and [element] are for
+  /// that error.
+  String _filtered(
+    DartType type,
+    String resolve,
+    String where,
+    Element element,
+  ) {
     DartType value = _unwrapFuture(type);
     bool list = value is InterfaceType && value.isDartCoreList;
     DartType item = value is InterfaceType && list
         ? value.typeArguments.first
         : value;
-    Element? element = item is InterfaceType ? item.element : null;
-    String? filter = objects[element]?.filter;
+    // the model inside any number of lists
+    DartType inner = item;
+    while (inner is InterfaceType && inner.isDartCoreList) {
+      inner = inner.typeArguments.first;
+    }
+    ObjectSpec? target = objects[inner is InterfaceType ? inner.element : null];
+    String? filter = target?.filter;
     if (filter == null) return resolve;
-    // ponytail: a list with nullable items is not filtered; a model list
-    // field has non-null items.
-    if (list && item.nullabilitySuffix == NullabilitySuffix.question) {
-      return resolve;
+    if (!identical(inner, item) ||
+        (list && item.nullabilitySuffix == NullabilitySuffix.question)) {
+      String name = target!.element.displayName;
+      _fail(
+        where,
+        'it gives ${value.getDisplayString()}, but $name has filter:. A '
+        'filtered model can be given as $name, $name?, List<$name> or '
+        'List<$name>? only.',
+        element,
+      );
     }
     usesGate = true;
     String model = imports.nonNullCode(item);
@@ -1128,6 +1159,8 @@ Future<$model?> _update$name(ResolveInfo<DoxGraphQLContext> info) async {
       resolve: _filtered(
         returnType,
         '$instance.${method.displayName}(${values.join(', ')})',
+        where,
+        method,
       ),
       where: where,
       description: _string(ann, 'description') ?? docOf(method),

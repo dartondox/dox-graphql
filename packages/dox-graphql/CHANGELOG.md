@@ -26,6 +26,9 @@
     `@GraphQLQuery`, `@GraphQLMutation` and `@GraphQLResolveField`. A
     denied row is null, like a missing id, and a list drops it. The
     filter does not stop update and delete: they ask only their `can:`.
+    A row that `filter:` hides can still be updated or deleted when the
+    operation has no `can:`. A created row that `filter:` hides is saved,
+    and the create returns null.
     An interface or union field that picks the type is not filtered.
   - A type with `guard: true` also guards its `<Model>Paginator` and its
     `@GraphQLDelete` (a Boolean field), so a guest gets

@@ -65,8 +65,14 @@ class GraphQL {
   /// have fewer rows than its limit.
   ///
   /// It does not stop a write: `@GraphQLUpdate` and `@GraphQLDelete` ask
-  /// only their `can:`. An interface or union field that picks this type
-  /// for its value is not filtered: call `Gate` in its resolver.
+  /// only their `can:`. A row that `filter:` hides can still be updated or
+  /// deleted when the operation has no `can:`. A created row that
+  /// `filter:` hides is saved, and the create returns null. An interface
+  /// or union field that picks this type for its value is not filtered:
+  /// call `Gate` in its resolver.
+  ///
+  /// A field can give a filtered model as `M`, `M?`, `List<M>` or
+  /// `List<M>?` only. Another shape stops the build.
   final String? filter;
 }
 

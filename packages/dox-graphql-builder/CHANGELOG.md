@@ -19,6 +19,9 @@
   the blank row (like a `late` field that is not set, or a parse of an
   empty value) now denies. Before, the request got an internal error,
   so a missing id gave another answer than a denied id.
+- The build fails when a field gives a model with `filter:` as
+  `List<M?>` or a nested list like `List<List<M>>`: those rows can not be
+  filtered. `M`, `M?`, `List<M>` and `List<M>?` work.
 - A build warning for `@GraphQLUpdate` or `@GraphQLDelete` with no
   `can:` and no `guard:` (on it or on the type): anyone can call it.
 - Reads `@GraphQL` (was `@GraphQLType`).
