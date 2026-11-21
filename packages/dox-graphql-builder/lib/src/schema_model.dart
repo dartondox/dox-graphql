@@ -25,8 +25,7 @@ class FieldSpec {
     this.deprecationReason,
     this.args = const <ArgSpec>[],
     this.isAsync = false,
-    this.auto = false,
-    this.auth,
+    this.guard = false,
     this.column,
   });
 
@@ -48,12 +47,8 @@ class FieldSpec {
   /// True when [resolve] uses `await`.
   final bool isAsync;
 
-  /// A field made for a model (an `AutoField`).
-  final bool auto;
-
-  /// The `auth:` of the field: true needs a login, false is public, null
-  /// uses the default of the server.
-  final bool? auth;
+  /// The `guard:` of the field: true needs a login.
+  final bool guard;
 
   /// Models only: the column of the field (the snake_case name for a
   /// relation). The field is left out when the model has it in `hidden`,
@@ -77,25 +72,23 @@ class ObjectSpec {
   /// True for a model of dox_orm.
   bool orm = false;
 
-  /// Models: the list and find queries.
-  bool queries = true;
+  /// The `guard:` of the type.
+  bool guard = false;
 
-  /// Models: the `@Dto` class of `dto:`, for the create, update and
-  /// delete mutations.
-  ClassElement? dto;
+  /// Models: the ability of `filter:`, like `view`.
+  String? filter;
 
-  /// The `auth:` of the type.
-  bool? auth;
+  /// Models: the operation annotations, null when not there.
+  OperationSpec? all;
+  OperationSpec? paginate;
+  OperationSpec? find;
+  OperationSpec? create;
+  OperationSpec? update;
+  OperationSpec? delete;
 
-  /// Models: true with a `policy:`, for the update and delete mutations.
-  bool policy = false;
-
-  /// Models: true when the user type of the policy is not nullable, so
-  /// the policy denies every guest.
-  bool guestsDenied = false;
-
-  /// Models: the column of `owner:`, like `userId`. The create mutation
-  /// sets it to the id of the logged-in user.
+  /// Models: the column of the `owner:` of `@GraphQLCreate`, like
+  /// `userId`. The create mutation sets it to the id of the logged-in
+  /// user.
   String? owner;
 
   /// Models: the Dart type of the [owner] column, `int` or `String`.
@@ -110,6 +103,52 @@ class ObjectSpec {
 
   /// The name of the variable in the generated code.
   String get variable => '_t$name';
+
+  /// The variable of the `<Name>Paginator` type.
+  String get paginator => '_p$name';
+}
+
+/// One operation annotation of a model, like `@GraphQLFind(can: 'view')`.
+class OperationSpec {
+  OperationSpec(
+    this.annotation, {
+    this.name,
+    this.description,
+    this.can,
+    this.guard = false,
+    this.dto,
+    this.owner,
+  });
+
+  /// The class name of the annotation, like `GraphQLFind`.
+  final String annotation;
+  final String? name;
+  final String? description;
+
+  /// The ability to ask, like `view`.
+  final String? can;
+  final bool guard;
+
+  /// Create and update: the `@Dto` class.
+  final ClassElement? dto;
+
+  /// Create: the `owner:` column.
+  final String? owner;
+}
+
+/// One ability that the code asks: checked when the app starts.
+class AbilityCheck {
+  AbilityCheck(this.annotation, this.model, this.modelName, this.ability);
+
+  /// The annotation as text, like `@GraphQLFind(can: 'view')`.
+  final String annotation;
+
+  /// The model type as code, like `i1.Post`.
+  final String model;
+
+  /// The model class name, like `Post`.
+  final String modelName;
+  final String ability;
 }
 
 /// One Dart enum used by a field or an argument.

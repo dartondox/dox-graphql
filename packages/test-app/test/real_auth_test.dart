@@ -111,7 +111,8 @@ void main() {
     expect(queries.where((String sql) => sql.contains('users')), isNotEmpty);
   });
 
-  // Note has `auth: false` and `owner: 'userId'`
+  // Note has `@GraphQLCreate(owner: 'userId')`, and guard: true on update
+  // and delete
   group('owner: |', () {
     Object? code(Map<String, Object?> res) {
       List<Object?> errors = res['errors'] as List<Object?>;
@@ -150,7 +151,7 @@ void main() {
       expect(await count(), before);
     });
 
-    test('a guest gets UNAUTHENTICATED, even with auth: false', () async {
+    test('a guest gets UNAUTHENTICATED, with no guard: on create', () async {
       int before = await count();
       Map<String, Object?> res = await send(
         'mutation { createNote(input: {title: "Guest"}) { id } }',
@@ -159,7 +160,7 @@ void main() {
       expect(code(res), 'UNAUTHENTICATED');
       expect(await count(), before);
       // reading stays public
-      Map<String, Object?> list = await send('{ notes { id } }');
+      Map<String, Object?> list = await send('{ notes { data { id } } }');
       expect(list['errors'], isNull);
     });
 

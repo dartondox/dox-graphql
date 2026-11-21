@@ -5,9 +5,9 @@ import '../post/post.model.dart';
 
 part 'comment.model.g.dart';
 
-/// Only reachable through `post.comments`.
+/// No operation annotation: only reachable through `post.comments`.
 @DoxModel(table: 'comments')
-@GraphQLType(queries: false)
+@GraphQLType()
 class Comment extends CommentGenerator {
   @Column()
   String? body;

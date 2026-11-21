@@ -1,15 +1,22 @@
+import 'package:dox_auth/dox_auth.dart' show Ability;
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/doc_dto.dart';
-import '../../policies/doc_policy.dart';
 
 part 'doc.model.g.dart';
 
-/// Its policy has `viewAny`, `view` and `create`: the reads and the create
-/// ask it too.
+/// Its policy (DocPolicy) has every ability. The lists and the relations
+/// to Doc drop the rows that `view` denies. Find, update and delete need
+/// a login, so a guest is stopped before the row lookup.
 @DoxModel(table: 'docs')
-@GraphQLType(dto: DocDto, policy: DocPolicy, auth: false)
+@GraphQLType(filter: Ability.view)
+@GraphQLAll(can: Ability.viewAny)
+@GraphQLPaginate(can: Ability.viewAny)
+@GraphQLFind(can: Ability.view, guard: true)
+@GraphQLCreate(dto: DocDto, can: Ability.create)
+@GraphQLUpdate(dto: DocDto, can: Ability.update, guard: true)
+@GraphQLDelete(can: Ability.delete, guard: true)
 class Doc extends DocGenerator {
   @Column()
   String? title;
@@ -23,7 +30,7 @@ class Doc extends DocGenerator {
   @Column()
   int? parentId;
 
-  /// A single relation to a model whose policy has `view`. It is not
+  /// A single relation to a model with `filter:`. It is not
   /// nullable in Dart: only the field can be null, not the parent.
   @BelongsTo(Doc, foreignKey: 'parent_id')
   late Doc parent;

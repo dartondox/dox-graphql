@@ -1,15 +1,21 @@
+import 'package:dox_auth/dox_auth.dart' show Ability;
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/note_dto.dart';
-import '../../policies/note_policy.dart';
 
 part 'note.model.g.dart';
 
 /// Public to read, but `owner:` makes create need a login. The create
-/// sets `userId` to the logged-in user.
+/// sets `userId` to the logged-in user. Only @GraphQLPaginate, so the
+/// paged list is `notes`.
 @DoxModel(table: 'notes')
-@GraphQLType(dto: NoteDto, policy: NotePolicy, auth: false, owner: 'userId')
+@GraphQLType()
+@GraphQLPaginate()
+@GraphQLFind()
+@GraphQLCreate(dto: NoteDto, owner: 'userId')
+@GraphQLUpdate(dto: NoteDto, can: Ability.update, guard: true)
+@GraphQLDelete(can: Ability.delete, guard: true)
 class Note extends NoteGenerator {
   @Column()
   String? title;

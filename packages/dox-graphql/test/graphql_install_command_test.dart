@@ -66,8 +66,8 @@ void main() {
       allOf(
         contains("import 'package:my_app/generated/schema.g.dart';"),
         contains('schema: graphqlSchema,'),
-        // the API is public until the app turns the login on
-        contains('every field of the API is public'),
+        // every field is public unless it has guard: true
+        contains('Every field is public unless it has `guard: true`.'),
         contains('// middleware: <Object>[AuthMiddleware()],'),
       ),
     );

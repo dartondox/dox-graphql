@@ -13,12 +13,13 @@ class SchemaWriter {
   static const String _context = 'DoxGraphQLContext';
   static const String _info = 'ResolveInfo<$_context> info';
 
-  /// The policy checks of the models with `policy:`.
+  /// The `can:` and `filter:` checks.
   static const String _allow =
       '''
-/// Asks the policy (registered with `Gate.policy`) if the user may do
-/// [ability] on [subject]: a row, or the model type. Throws when not:
-/// "Unauthenticated" for a guest, else "Forbidden".
+/// Asks `Gate` (a policy registered with `Gate.policy`, or a
+/// `Gate.define`) if the user may do [ability] on [subject]: a row, or
+/// the model type. Throws when not: "Unauthenticated" for a guest, else
+/// "Forbidden".
 Future<void> _allow(
   ResolveInfo<$_context> info,
   String ability,
@@ -52,49 +53,72 @@ Future<void> _allowMissing(
   if (!allowed) throw _denied(user);
 }
 
-/// [_allow] on the model type [T], when the policy of [T] lists
-/// [ability] (`viewAny`, `create`). Else nothing is checked.
-Future<void> _allowIf<T>(ResolveInfo<$_context> info, String ability) async {
-  if (Gate.hasAbility<T>(ability)) await _allow(info, ability, T);
-}
-
-/// The rows of [rows] that the `view` ability of the policy allows, when
-/// the policy of [T] lists `view`. The others are left out, with no error.
-Future<List<T>?> _viewList<T extends Object>(
+/// The rows of [rows] that [ability] allows (`filter:`). The others are
+/// left out, with no error.
+Future<List<T>?> _filterList<T extends Object>(
   ResolveInfo<$_context> info,
+  String ability,
   Future<List<T>?> rows,
 ) async {
   List<T>? list = await rows;
-  if (list == null || list.isEmpty || !Gate.hasAbility<T>('view')) {
-    return list;
-  }
+  if (list == null || list.isEmpty) return list;
   Object? user = await info.context.user<Object>();
   return <T>[
     for (T row in list)
-      if (await Gate.allows(user, 'view', row)) row,
+      if (await Gate.allows(user, ability, row)) row,
   ];
 }
 
-/// [row] when the `view` ability of the policy allows it (or the policy
-/// of [T] does not list `view`), else null.
-Future<T?> _viewOne<T extends Object>(
+/// [row] when [ability] allows it (`filter:`), else null.
+Future<T?> _filterOne<T extends Object>(
   ResolveInfo<$_context> info,
+  String ability,
   Future<T?> row,
 ) async {
   T? value = await row;
-  if (value == null || !Gate.hasAbility<T>('view')) return value;
+  if (value == null) return null;
   Object? user = await info.context.user<Object>();
-  return await Gate.allows(user, 'view', value) ? value : null;
+  return await Gate.allows(user, ability, value) ? value : null;
 }
 
-/// "Unauthenticated" before the row lookup, when the policy denies every
-/// guest.
-Future<void> _login(ResolveInfo<$_context> info) async {
-  if (await info.context.auth() == null) throw GraphQLAuth.unauthenticatedError();
+/// [page] with only the rows that [ability] allows (`filter:`). The
+/// count query ran before, so `total` and `lastPage` still count the
+/// rows that are left out.
+Future<Pagination<T>> _filterPage<T extends Object>(
+  ResolveInfo<$_context> info,
+  String ability,
+  Future<Pagination<T>> page,
+) async {
+  Pagination<T> result = await page;
+  result.data = (await _filterList<T>(info, ability, Future<List<T>>.value(result.data)))!;
+  return result;
 }
 
 GraphQLError _denied(Object? user) =>
     user == null ? GraphQLAuth.unauthenticatedError() : GraphQLAuth.forbidden();
+''';
+
+  /// The start check of the abilities of `can:` and `filter:`.
+  static const String _checkAbility = r'''
+/// Throws when [ability] (of [annotation] on [model]) is not an ability
+/// of the policy of [M] and not a `Gate.define`: a typo, or a policy that
+/// is not registered.
+void _checkAbility<M>(String annotation, String model, String ability) {
+  if (Gate.isDefined(ability)) return;
+  Policy<dynamic, M>? policy = Gate.policyOf<M>();
+  if (policy == null) {
+    throw StateError(
+      '$annotation on $model: $model has no policy and there is no '
+      "Gate.define('$ability'). Register the policy with "
+      'Gate.policy<$model>(...) in the setup() of a provider.',
+    );
+  }
+  if (policy.has(ability)) return;
+  throw StateError(
+    "$annotation on $model: ${policy.runtimeType} has no ability "
+    "'$ability'. Available: ${policy.abilities.keys.join(', ')}.",
+  );
+}
 ''';
 
   String write() {
@@ -109,13 +133,16 @@ GraphQLError _denied(Object? user) =>
     if (reader.hasModels) {
       out.writeln("import 'package:dox_graphql_orm/dox_graphql_orm.dart';");
     }
-    if (reader.hasPolicies) {
-      out.writeln("import 'package:dox_auth/dox_auth.dart' show Gate;");
+    if (reader.usesGate) {
+      out.writeln("import 'package:dox_auth/dox_auth.dart' show Gate, Policy;");
     }
     StringBuffer body = StringBuffer();
     _writeSchema(body);
     for (ObjectSpec object in reader.objects.values) {
       _writeObject(body, object);
+    }
+    for (ObjectSpec object in reader.paginators) {
+      _writePaginator(body, object);
     }
     for (EnumSpec spec in reader.enums.values) {
       _writeEnum(body, spec);
@@ -126,7 +153,23 @@ GraphQLError _denied(Object? user) =>
     for (String function in reader.functions) {
       body.writeln(function);
     }
-    if (reader.hasPolicies) body.writeln(_allow);
+    if (reader.usesGate) body.writeln(_allow);
+    if (reader.abilityChecks.isNotEmpty) {
+      body
+        ..writeln('/// The abilities of `can:` and `filter:`, checked when the')
+        ..writeln('/// app starts (`GraphQLSchema.startChecks`).')
+        ..writeln('void _checkAbilities() {');
+      for (AbilityCheck check in reader.abilityChecks) {
+        body.writeln(
+          '_checkAbility<${check.model}>(${literal(check.annotation)}, '
+          '${literal(check.modelName)}, ${literal(check.ability)});',
+        );
+      }
+      body
+        ..writeln('}')
+        ..writeln()
+        ..writeln(_checkAbility);
+    }
     // the imports last: writing the code finds the prefixes
     for (MapEntry<String, String> import in reader.imports.prefixes.entries) {
       out.writeln("import '${import.key}' as ${import.value};");
@@ -141,7 +184,7 @@ GraphQLError _denied(Object? user) =>
     out
       ..writeln('/// The GraphQL schema of the app, made from the')
       ..writeln(
-        '/// `@GraphQLType`, `@GraphQLQuery` and `@GraphQLMutation` annotations.',
+        '/// `@GraphQLType`, `@GraphQLAll`, `@GraphQLQuery`, ... annotations.',
       )
       ..writeln('/// Use it in `GraphQLConfig(schema: graphqlSchema)`.')
       ..writeln(
@@ -156,7 +199,38 @@ GraphQLError _denied(Object? user) =>
     for (ObjectSpec object in reader.objects.values) {
       out.writeln('${object.variable},');
     }
+    for (ObjectSpec object in reader.paginators) {
+      out.writeln('${object.paginator},');
+    }
+    if (reader.paginators.isNotEmpty) out.writeln('GraphQLOrm.paginatorInfo,');
+    out.writeln('],');
+    if (reader.abilityChecks.isNotEmpty) {
+      out.writeln('startChecks: <void Function()>[_checkAbilities],');
+    }
     out
+      ..writeln(');')
+      ..writeln();
+  }
+
+  /// The `<Name>Paginator` type of a model with `@GraphQLPaginate`.
+  void _writePaginator(StringBuffer out, ObjectSpec object) {
+    String dartType =
+        'Pagination<${_prefix(object.library)}.${object.element.displayName}>';
+    String type = 'ObjectType<$dartType, $_context>';
+    String field = 'Field<$dartType, $_context>';
+    out
+      ..writeln('final $type ${object.paginator} = $type(')
+      ..writeln('${literal('${object.name}Paginator')},')
+      ..writeln("description: 'A page of ${object.name} rows.',")
+      ..writeln('fields: () => <$field>[')
+      ..writeln(
+        "$field('data', ${object.variable}.nonNull.list.nonNull, "
+        'resolve: ($dartType s, $_info) => s.data,),',
+      )
+      ..writeln(
+        "$field('paginatorInfo', GraphQLOrm.paginatorInfo.nonNull, "
+        'resolve: ($dartType s, $_info) => s,),',
+      )
       ..writeln('],')
       ..writeln(');')
       ..writeln();
@@ -180,11 +254,11 @@ GraphQLError _denied(Object? user) =>
     String type = 'ObjectType<$dartType, $_context>';
     out
       ..writeln('final $type ${object.variable} = $type(')
-      ..writeln('${_string(object.name)},');
+      ..writeln('${literal(object.name)},');
     if (object.description != null) {
-      out.writeln('description: ${_string(object.description!)},');
+      out.writeln('description: ${literal(object.description!)},');
     }
-    if (object.auth != null) out.writeln('auth: ${object.auth},');
+    if (object.guard) out.writeln('guard: true,');
     if (object.orm) {
       // a column or relation in `hidden` of the model is left out, so it
       // never leaks. With `visibleFields`, only those are shown.
@@ -213,23 +287,22 @@ GraphQLError _denied(Object? user) =>
   /// One `Field(...)` of a parent of Dart type [parent]. [source] is the
   /// name of the parent parameter of the resolver.
   String _field(FieldSpec field, String parent, String source) {
-    String kind = field.auto ? 'AutoField' : 'Field';
     StringBuffer out = StringBuffer()
-      ..write('$kind<$parent, $_context>(')
-      ..write('${_string(field.name)}, ${field.type},');
+      ..write('Field<$parent, $_context>(')
+      ..write('${literal(field.name)}, ${field.type},');
     if (field.description != null) {
-      out.write('description: ${_string(field.description!)},');
+      out.write('description: ${literal(field.description!)},');
     }
     if (field.deprecationReason != null) {
-      out.write('deprecationReason: ${_string(field.deprecationReason!)},');
+      out.write('deprecationReason: ${literal(field.deprecationReason!)},');
     }
-    if (field.auth != null) out.write('auth: ${field.auth},');
+    if (field.guard) out.write('guard: true,');
     if (field.args.isNotEmpty) {
       out.write('args: <Argument>[');
       for (ArgSpec arg in field.args) {
-        out.write('Argument(${_string(arg.name)}, ${arg.type}');
+        out.write('Argument(${literal(arg.name)}, ${arg.type}');
         if (arg.defaultValue != null) {
-          out.write(', defaultValue: ${_string(arg.defaultValue!)}');
+          out.write(', defaultValue: ${literal(arg.defaultValue!)}');
         }
         out.write('),');
       }
@@ -239,18 +312,18 @@ GraphQLError _denied(Object? user) =>
     out.write('resolve: ($parent $source, $_info)$async => ${field.resolve},)');
     String text = out.toString();
     String? column = field.column;
-    return column == null ? text : 'if (show(${_string(column)})) $text';
+    return column == null ? text : 'if (show(${literal(column)})) $text';
   }
 
   void _writeEnum(StringBuffer out, EnumSpec spec) {
     String dartType = '${_prefix(spec.library)}.${spec.name}';
     out.writeln(
       'final EnumType<$dartType> ${spec.variable} = '
-      'EnumType<$dartType>(${_string(spec.name)}, <EnumValue<$dartType>>[',
+      'EnumType<$dartType>(${literal(spec.name)}, <EnumValue<$dartType>>[',
     );
     for (FieldElement constant in spec.element.constants) {
       String value = constant.displayName;
-      out.writeln('EnumValue<$dartType>(${_string(value)}, $dartType.$value),');
+      out.writeln('EnumValue<$dartType>(${literal(value)}, $dartType.$value),');
     }
     out
       ..writeln(']);')
@@ -262,13 +335,13 @@ GraphQLError _denied(Object? user) =>
     String dto = '$prefix.${input.element.displayName}';
     out
       ..writeln('final InputObjectType ${input.variable} = InputObjectType(')
-      ..writeln('${_string(input.name)},');
+      ..writeln('${literal(input.name)},');
     if (input.description != null) {
-      out.writeln('description: ${_string(input.description!)},');
+      out.writeln('description: ${literal(input.description!)},');
     }
     out.writeln('fields: () => <InputField>[');
     for (InputFieldSpec field in input.fields) {
-      out.writeln('InputField(${_string(field.name)}, ${field.type}),');
+      out.writeln('InputField(${literal(field.name)}, ${field.type}),');
     }
     out
       ..writeln('],')
@@ -278,7 +351,7 @@ GraphQLError _denied(Object? user) =>
       ..writeln('return <String, Object?>{');
     for (InputFieldSpec field in input.fields) {
       out.writeln(
-        "if (v.has('${field.name}')) ${_string(field.key)}: ${field.convert},",
+        "if (v.has('${field.name}')) ${literal(field.key)}: ${field.convert},",
       );
     }
     out
@@ -297,7 +370,7 @@ GraphQLError _denied(Object? user) =>
       );
     for (InputFieldSpec field in input.fields) {
       if (field.key != field.name) {
-        out.writeln('${_string(field.key)}: ${_string(field.name)},');
+        out.writeln('${literal(field.key)}: ${literal(field.name)},');
       }
     }
     out
@@ -307,15 +380,4 @@ GraphQLError _denied(Object? user) =>
   }
 
   String _prefix(String library) => reader.imports.prefixes[library]!;
-
-  /// [text] as a Dart string literal.
-  static String _string(String text) {
-    String escaped = text
-        .replaceAll(r'\', r'\\')
-        .replaceAll("'", r"\'")
-        .replaceAll(r'$', r'\$')
-        .replaceAll('\n', r'\n')
-        .replaceAll('\r', r'\r');
-    return "'$escaped'";
-  }
 }

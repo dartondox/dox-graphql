@@ -31,7 +31,7 @@ void main() {
   });
 
   group('auth middleware in the config |', () {
-    test('a guest gets UNAUTHENTICATED on a default field', () async {
+    test('a guest gets UNAUTHENTICATED on a guard: true field', () async {
       TestResponse res = await client.post(
         '/graphql',
         body: <String, Object?>{'query': '{ me }'},
@@ -52,7 +52,7 @@ void main() {
       });
     });
 
-    test('@GraphQLQuery(auth: false) is public', () async {
+    test('@GraphQLQuery() with no guard: is public', () async {
       Map<String, Object?> res = await run(client, '{ path }', user: null);
       expect(res, <String, Object?>{
         'data': <String, Object?>{'path': '/graphql'},
@@ -78,7 +78,7 @@ void main() {
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
 
-    test('@GraphQLType(auth: true) guards the model writes', () async {
+    test('@GraphQLType(guard: true) guards the model writes', () async {
       Map<String, Object?> res = await run(
         client,
         'mutation { deleteMember(id: "2") }',
@@ -97,7 +97,7 @@ void main() {
       });
     });
 
-    test('@GraphQLType(auth: false) model queries are public', () async {
+    test('model queries with no guard: are public', () async {
       Map<String, Object?> res = await run(
         client,
         '{ article(id: "1") { title } }',
@@ -129,14 +129,21 @@ void main() {
     });
 
     test('a guest keeps the sibling fields of a refused relation', () async {
-      // Comment needs a login by default: only `comments` is null
+      // User has guard: true: only `user` is null
       Map<String, Object?> res = await run(
         client,
-        '{ post(id: "1") { title comments { id } } }',
+        '{ post(id: "1") { title comments { id } user { name } } }',
         user: null,
       );
       expect(res['data'], <String, Object?>{
-        'post': <String, Object?>{'title': 'Hello GraphQL', 'comments': null},
+        'post': <String, Object?>{
+          'title': 'Hello GraphQL',
+          'comments': <Object?>[
+            <String, Object?>{'id': '1'},
+            <String, Object?>{'id': '2'},
+          ],
+          'user': null,
+        },
       });
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
@@ -152,14 +159,20 @@ void main() {
     });
 
     test('a refused root field is null, the other root fields stay', () async {
-      // `books` gives a type that needs a login by default
+      Map<String, Object?> res = await run(client, '{ path me }', user: null);
+      expect(res['data'], <String, Object?>{'path': '/graphql', 'me': null});
+      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+    });
+
+    test('the default is public, also with the auth middleware', () async {
+      FakeAuthMiddleware.runs = 0;
       Map<String, Object?> res = await run(
         client,
-        '{ path books { id } }',
+        '{ books { id author { name } } post(id: "1") { tags { name } } }',
         user: null,
       );
-      expect(res['data'], <String, Object?>{'path': '/graphql', 'books': null});
-      expect(_codes(res), <Object?>['UNAUTHENTICATED']);
+      expect(res['errors'], isNull);
+      expect(FakeAuthMiddleware.runs, 0);
     });
 
     test('a request that does not need the user runs no login', () async {

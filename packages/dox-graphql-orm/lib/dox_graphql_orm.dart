@@ -4,3 +4,6 @@
 library;
 
 export 'src/graphql_orm.dart';
+
+// the result of `GraphQLOrm.paginate`, for the generated paginator types
+export 'package:dox_orm/dox_orm.dart' show Pagination;

@@ -2,7 +2,8 @@ import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 /// Reads and writes models of dox_orm for GraphQL. The code that
-/// `dox_graphql_builder` writes for `@GraphQLType()` models calls it.
+/// `dox_graphql_builder` writes for the `@GraphQLAll`, `@GraphQLFind`,
+/// ... annotations of models calls it.
 class GraphQLOrm {
   const GraphQLOrm._();
 
@@ -26,6 +27,76 @@ class GraphQLOrm {
     }
     return query.orderBy(query.primaryKey).limit(limit).offset(offset).get();
   }
+
+  /// The page of the paged list query:
+  /// `posts(first: Int = 20, page: Int = 1)`. It uses `paginate` of
+  /// dox_orm: one count query and one page query. A [first] above
+  /// [maxLimit] is an error, like the `limit` of [list].
+  static Future<Pagination<M>> paginate<M extends Model<M>>(
+    M query,
+    ResolveInfo<DoxGraphQLContext> info,
+  ) {
+    int first = info.args.get<int>('first') ?? 20;
+    int page = info.args.get<int>('page') ?? 1;
+    if (first > maxLimit) {
+      throw GraphQLError('"first" can be at most $maxLimit.');
+    }
+    if (first < 1 || page < 1) {
+      throw GraphQLError('"first" and "page" must be at least 1.');
+    }
+    return query
+        .orderBy(query.primaryKey)
+        .paginate(currentPage: page, perPage: first);
+  }
+
+  /// The `PaginatorInfo` type of every paged list query: the numbers of
+  /// the page. `count` is the number of rows on this page. `firstItem`
+  /// and `lastItem` are the numbers of its first and last row (from 1),
+  /// null on an empty page.
+  ///
+  /// With `filter:` on the model, the rows that the filter drops are
+  /// left out of `data` and `count`, but `total` and `lastPage` still
+  /// count them: the count query runs before the filter.
+  static final ObjectType<Pagination<Object?>, DoxGraphQLContext>
+  paginatorInfo = ObjectType<Pagination<Object?>, DoxGraphQLContext>(
+    'PaginatorInfo',
+    description: 'The numbers of a page of a paged list.',
+    fields: () => <Field<Pagination<Object?>, DoxGraphQLContext>>[
+      _info('count', graphqlInt.nonNull, _count),
+      _info('currentPage', graphqlInt.nonNull, _currentPage),
+      _info('firstItem', graphqlInt, _firstItem),
+      _info('lastItem', graphqlInt, _lastItem),
+      _info('hasMorePages', graphqlBoolean.nonNull, _hasMorePages),
+      _info('lastPage', graphqlInt.nonNull, _lastPage),
+      _info('perPage', graphqlInt.nonNull, _perPage),
+      _info('total', graphqlInt.nonNull, _total),
+    ],
+  );
+
+  static Field<Pagination<Object?>, DoxGraphQLContext> _info(
+    String name,
+    GraphQLTypeRef type,
+    Object? Function(Pagination<Object?> page) read,
+  ) {
+    return Field<Pagination<Object?>, DoxGraphQLContext>(
+      name,
+      type,
+      resolve: (Pagination<Object?> s, ResolveInfo<DoxGraphQLContext> _) =>
+          read(s),
+    );
+  }
+
+  static int _count(Pagination<Object?> p) => p.data.length;
+  static int _currentPage(Pagination<Object?> p) => p.currentPage;
+  static int? _firstItem(Pagination<Object?> p) =>
+      p.data.isEmpty ? null : (p.currentPage - 1) * p.perPage + 1;
+  static int? _lastItem(Pagination<Object?> p) =>
+      p.data.isEmpty ? null : (p.currentPage - 1) * p.perPage + p.data.length;
+  static bool _hasMorePages(Pagination<Object?> p) =>
+      p.currentPage < p.lastPage;
+  static int _lastPage(Pagination<Object?> p) => p.lastPage;
+  static int _perPage(Pagination<Object?> p) => p.perPage;
+  static int _total(Pagination<Object?> p) => p.total;
 
   /// The row with key [id], or null. A null [id] (an id that is not a
   /// number, for a number key) gives null.

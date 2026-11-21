@@ -9,7 +9,9 @@ part 'user.model.g.dart';
 
 /// Every field that gives a User needs a login, also `post.user`.
 @DoxModel(table: 'users')
-@GraphQLType(auth: true)
+@GraphQLType(guard: true)
+@GraphQLAll()
+@GraphQLFind()
 class User extends UserGenerator {
   @override
   List<String> get hidden => <String>['password'];

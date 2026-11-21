@@ -13,8 +13,8 @@ List<Object?> _codes(Map<String, Object?> res) => <Object?>[
     ((e as Map<String, Object?>)['extensions'] as Map<String, Object?>)['code'],
 ];
 
-/// The policy of Doc (see DocPolicy) has viewAny, view and create: the
-/// reads and the create ask it. Doc 1 is ann's, doc 2 is bob's.
+/// Doc asks its policy (see DocPolicy) in every operation, and has
+/// `filter: Ability.view`. Doc 1 is ann's, doc 2 is bob's.
 void main() {
   late DoxTestClient client;
 
@@ -51,25 +51,23 @@ void main() {
       expect(_codes(res), <Object?>['UNAUTHENTICATED']);
     });
 
-    test(
-      'a relation to Doc is null with FORBIDDEN, the rest is kept',
-      () async {
-        Map<String, Object?> res = await run(
-          client,
-          '{ accounts { name docs { title } } }',
-          user: 'blind',
-        );
-        expect(res['data'], <String, Object?>{
+    test('a relation to Doc asks no viewAny: it only filters', () async {
+      Map<String, Object?> res = await run(
+        client,
+        '{ accounts { name docs { title } } }',
+        user: 'blind',
+      );
+      expect(res, <String, Object?>{
+        'data': <String, Object?>{
           'accounts': <Object?>[
-            <String, Object?>{'name': 'main', 'docs': null},
+            <String, Object?>{'name': 'main', 'docs': <Object?>[]},
           ],
-        });
-        expect(_codes(res), <Object?>['FORBIDDEN']);
-      },
-    );
+        },
+      });
+    });
   });
 
-  group('view on lists and relations |', () {
+  group('filter: on lists and relations |', () {
     test('Bob doc is not visible to ann through any path', () async {
       Map<String, Object?> res = await run(
         client,
@@ -164,7 +162,7 @@ void main() {
     });
   });
 
-  group('view |', () {
+  group('@GraphQLFind(can: view) |', () {
     test('find gives the row to its owner', () async {
       Map<String, Object?> res = await run(
         client,

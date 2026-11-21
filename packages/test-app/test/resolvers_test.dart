@@ -98,7 +98,7 @@ void main() {
     expect(res['data'], <String, Object?>{'me': 'ann'});
   });
 
-  test('a @ResolveField with a DataLoader loads in one batch', () async {
+  test('a @GraphQLResolveField with a DataLoader loads in one batch', () async {
     AuthorRepository authors = Dox().ioc.get<AuthorRepository>();
     authors.batches.clear();
     Map<String, Object?> res = await run(

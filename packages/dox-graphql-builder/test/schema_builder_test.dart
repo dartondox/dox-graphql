@@ -236,21 +236,21 @@ class Post {
 }
 '''),
       );
-      // no `auth:` on Post: the app default may need a login, so the field
-      // may be refused and is nullable (the items are not)
-      expect(out, contains(flat("'posts', _tPost.nonNull.list,")));
+      // no `guard:` on Post: the field is never refused, so it keeps its
+      // Dart type
+      expect(out, contains(flat("'posts', _tPost.nonNull.list.nonNull,")));
       expect(out, contains(flat("'author', _tUser,")));
     });
 
     test('a resolver that gives a type that can refuse is nullable', () async {
       String out = flat(
         await _build('''
-@GraphQLType(auth: true)
+@GraphQLType(guard: true)
 class Secret {
   final String name = '';
 }
 
-@GraphQLType(auth: false)
+@GraphQLType()
 class Open {
   final String name = '';
 }
@@ -267,13 +267,13 @@ class PageResolver {
   List<Secret> secrets() => <Secret>[];
   @GraphQLQuery()
   Open open() => Open();
-  @GraphQLQuery(auth: true)
+  @GraphQLQuery(guard: true)
   Open locked() => Open();
   @GraphQLMutation()
   Page makePage() => Page();
-  @ResolveField()
+  @GraphQLResolveField()
   Secret secretOf(Page page) => Secret();
-  @ResolveField()
+  @GraphQLResolveField()
   Open openOf(Page page) => Open();
 }
 '''),
@@ -287,14 +287,14 @@ class PageResolver {
         expect(out, matches(RegExp("\\('$name',_t\\w+,")), reason: name);
       }
       expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
-      // a root field is always nullable, a @ResolveField only when it may
+      // a root field is always nullable, a @GraphQLResolveField only when it may
       // refuse
       expect(out, matches(RegExp("\\('open',_tOpen,")));
       expect(out, contains(flat("'openOf', _tOpen.nonNull,")));
     });
 
     test(
-      'every root field is nullable, a scalar with auth: true too',
+      'every root field is nullable, a scalar with guard: true too',
       () async {
         String out = flat(
           await _build('''
@@ -302,7 +302,7 @@ $_hello
 class R {
   @GraphQLQuery()
   int count() => 1;
-  @GraphQLQuery(auth: true)
+  @GraphQLQuery(guard: true)
   String me() => 'x';
   @GraphQLMutation()
   bool flip() => true;
@@ -310,11 +310,11 @@ class R {
   List<String> names() => <String>[];
 }
 
-@GraphQLType(auth: false)
+@GraphQLType()
 class Page {
   final String title = '';
   final String plain = '';
-  @GraphQLField(auth: true)
+  @GraphQLField(guard: true)
   String get secret => 's';
 }
 '''),
@@ -324,7 +324,7 @@ class Page {
         expect(out, matches(RegExp("\\('flip',graphqlBoolean,")));
         expect(out, contains(flat("'names', graphqlString.nonNull.list,")));
         // a scalar that needs a login can be refused: nullable
-        expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+        expect(out, contains(flat("'secret', graphqlString, guard: true,")));
         // a scalar that needs no login stays non-null
         expect(out, contains(flat("'plain', graphqlString.nonNull,")));
       },
@@ -335,12 +335,12 @@ class Page {
       String out = flat(
         await _build('''
 $_hello
-@GraphQLType(auth: true)
+@GraphQLType(guard: true)
 class Secret {
   final String name = '';
 }
 
-@GraphQLType(auth: false)
+@GraphQLType()
 class Open {
   final String name = '';
 }
@@ -358,7 +358,7 @@ class Page {
   @GraphQLField()
   Open get openGetter => Open();
 
-  @GraphQLField(auth: true)
+  @GraphQLField(guard: true)
   Open get lockedGetter => Open();
 }
 '''),
@@ -367,7 +367,7 @@ class Page {
       expect(out, contains(flat("'secret', _tSecret,")));
       expect(out, contains(flat("'secrets', _tSecret.nonNull.list,")));
       expect(out, contains(flat("'viaGetter', _tSecret,")));
-      expect(out, contains(flat("'lockedGetter', _tOpen, auth: true,")));
+      expect(out, contains(flat("'lockedGetter', _tOpen, guard: true,")));
       // a public type never refuses
       expect(out, contains(flat("'open', _tOpen.nonNull,")));
       expect(out, contains(flat("'opens', _tOpen.nonNull.list.nonNull,")));
@@ -573,9 +573,11 @@ class PostResolver {
       );
     });
 
-    test('@ResolveField adds a field to the type of its parent', () async {
-      String out = flat(
-        await _build('''
+    test(
+      '@GraphQLResolveField adds a field to the type of its parent',
+      () async {
+        String out = flat(
+          await _build('''
 $_hello
 @GraphQLType()
 class Post {
@@ -583,24 +585,25 @@ class Post {
 }
 
 class PostResolver {
-  @ResolveField(description: 'Who wrote it.')
+  @GraphQLResolveField(description: 'Who wrote it.')
   Future<String?> author(Post post, DoxGraphQLContext context, {int size = 1}) async => null;
 }
 '''),
-      );
-      expect(
-        out,
-        contains(
-          flat(
-            "Field<i1.Post, DoxGraphQLContext>('author', graphqlString, "
-            "description: 'Who wrote it.', args: <Argument>["
-            "Argument('size', graphqlInt.nonNull, defaultValue: '1'),], "
-            'resolve: (i1.Post s, ResolveInfo<DoxGraphQLContext> info) => '
-            "i1.PostResolver().author(s, info.context, size: info.args.get<int>('size')!))",
+        );
+        expect(
+          out,
+          contains(
+            flat(
+              "Field<i1.Post, DoxGraphQLContext>('author', graphqlString, "
+              "description: 'Who wrote it.', args: <Argument>["
+              "Argument('size', graphqlInt.nonNull, defaultValue: '1'),], "
+              'resolve: (i1.Post s, ResolveInfo<DoxGraphQLContext> info) => '
+              "i1.PostResolver().author(s, info.context, size: info.args.get<int>('size')!))",
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('no GraphQL class: a schema with a placeholder query', () async {
       String out = flat(await _build('class A {}'));
@@ -735,16 +738,16 @@ class Post {
 ''', 'Post.excerpt: @GraphQLField() works on a getter or a field.');
     });
 
-    test('@ResolveField with no parent type', () async {
+    test('@GraphQLResolveField with no parent type', () async {
       await expectError(
         '''
 $_hello
 class R {
-  @ResolveField()
+  @GraphQLResolveField()
   String author(int id) => '';
 }
 ''',
-        'R.author: the first parameter of a @ResolveField() method must be the parent',
+        'R.author: the first parameter of a @GraphQLResolveField() method must be the parent',
       );
     });
 
@@ -775,13 +778,13 @@ $_hello
 @GraphQLType()
 class Post { final int id = 1; }
 class R {
-  @ResolveField()
+  @GraphQLResolveField()
   int id(Post post) => 1;
 }
 ''', 'R.id: the field "id" of Post is made twice');
     });
 
-    test('dto: on a plain class', () async {
+    test('@GraphQLCreate on a plain class', () async {
       String out = await generate(<String, String>{
         'lib/app.dart':
             '''
@@ -793,11 +796,15 @@ class In {
   In({required this.name});
   final String name;
 }
-@GraphQLType(dto: In)
+@GraphQLType()
+@GraphQLCreate(dto: In)
 class Post { final int id = 1; }
 ''',
       });
-      expect(out, contains('Post: `dto:` works only on a model of dox_orm.'));
+      expect(
+        out,
+        contains('Post: @GraphQLCreate() works only on a model of dox_orm.'),
+      );
     });
 
     test('a private @GraphQLType class', () async {
@@ -817,11 +824,18 @@ class Post { final _Priv kind = _Priv.a; }
 ''', '_Priv: a private enum can not be a GraphQL type');
     });
 
-    test('a schema with no query', () async {
-      await expectError('''
+    test('a schema with types but no query gets the placeholder', () async {
+      String out = flat(
+        await _build('''
 @GraphQLType()
 class Post { final int id = 1; }
-''', 'The GraphQL schema has no query.');
+'''),
+      );
+      expect(out, contains(flat("'placeholder', graphqlBoolean.nonNull,")));
+      expect(
+        out,
+        contains(flat("ObjectType<i1.Post, DoxGraphQLContext>('Post',")),
+      );
     });
 
     test('an abstract resolver', () async {
@@ -862,34 +876,35 @@ class R {
     });
   });
 
-  group('auth |', () {
-    test('auth: on queries, mutations and @ResolveField', () async {
+  group('guard |', () {
+    test('guard: on queries, mutations and @GraphQLResolveField', () async {
       String out = flat(
         await _build('''
-@GraphQLType(auth: true)
+@GraphQLType(guard: true)
 class Book {
   final int id = 1;
 }
 
 class BookResolver {
-  @GraphQLQuery(auth: false)
+  @GraphQLQuery(guard: false)
   String open() => 'o';
 
   @GraphQLQuery()
   String plain() => 'p';
 
-  @GraphQLMutation(auth: true)
+  @GraphQLMutation(guard: true)
   int write() => 1;
 
-  @ResolveField(auth: true)
+  @GraphQLResolveField(guard: true)
   String secret(Book book) => 's';
 }
 '''),
       );
-      expect(out, contains(flat("'open', graphqlString, auth: false,")));
+      // the default is public: no guard: in the code
+      expect(out, contains(flat("'open', graphqlString, resolve:")));
       expect(out, contains(flat("'plain', graphqlString, resolve:")));
-      expect(out, contains(flat("'write', graphqlInt, auth: true,")));
-      expect(out, contains(flat("'secret', graphqlString, auth: true,")));
+      expect(out, contains(flat("'write', graphqlInt, guard: true,")));
+      expect(out, contains(flat("'secret', graphqlString, guard: true,")));
     });
   });
 }

@@ -11,13 +11,15 @@ import 'schema_writer.dart';
 /// schema of the app. Give it to `GraphQLConfig(schema: graphqlSchema)`.
 ///
 /// It reads every library in `lib/` and finds:
-/// - classes with `@GraphQLType()`: the object types,
-/// - classes with `@GraphQLQuery()`, `@GraphQLMutation()` or `@ResolveField()` methods:
-///   the resolvers.
+/// - classes with `@GraphQLType()`: the object types. On a model, the
+///   operation annotations (`@GraphQLAll()`, `@GraphQLFind()`, ...) give
+///   its root fields,
+/// - classes with `@GraphQLQuery()`, `@GraphQLMutation()` or
+///   `@GraphQLResolveField()` methods: the resolvers.
 ///
 /// A type that GraphQL can not show stops the build with an error that
-/// names the class and the member. When the package has none of these
-/// classes, the schema has one placeholder query, so it is still valid.
+/// names the class and the member. When the package has no query yet,
+/// the schema has one placeholder query, so it is still valid.
 class GraphQLSchemaBuilder implements Builder {
   const GraphQLSchemaBuilder();
 
@@ -59,17 +61,12 @@ class GraphQLSchemaBuilder implements Builder {
         if (SchemaReader.annotation(element, 'GraphQLType') != null) {
           types.add(element);
         }
+        SchemaReader.checkOperations(element);
         if (SchemaReader.isResolver(element)) resolvers.add(element);
       }
     }
 
     SchemaReader reader = SchemaReader(Imports());
-    if (types.isEmpty && resolvers.isEmpty) {
-      // The app has nothing yet (`dox add graphql` just ran). A schema needs
-      // one query field, so it gets a placeholder. It goes away with the
-      // first real query.
-      reader.query.add(_placeholder);
-    }
     for (ClassElement element in types) {
       reader.addType(element);
     }
@@ -78,10 +75,10 @@ class GraphQLSchemaBuilder implements Builder {
       reader.readResolver(element);
     }
     if (reader.query.isEmpty) {
-      throw StateError(
-        'The GraphQL schema has no query. Add @GraphQLQuery() to a method of a '
-        'resolver class.',
-      );
+      // The app has no query yet (`dox add graphql` just ran). A schema
+      // needs one query field, so it gets a placeholder. It goes away with
+      // the first real query.
+      reader.query.add(_placeholder);
     }
     String code = SchemaWriter(reader).write();
     DartFormatter formatter = DartFormatter(
@@ -100,7 +97,8 @@ class GraphQLSchemaBuilder implements Builder {
     where: 'Query.placeholder',
     description:
         'A placeholder, there is no other query yet. Add @GraphQLQuery() '
-        'to a method or @GraphQLType() to a model, then run the builder.',
+        'to a method, or @GraphQLAll() or @GraphQLFind() to a model, then '
+        'run the builder.',
   );
 
   static int _byPath(AssetId a, AssetId b) => a.path.compareTo(b.path);

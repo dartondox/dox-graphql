@@ -1,8 +1,8 @@
+import 'package:dox_auth/dox_auth.dart' show Ability;
 import 'package:dox_graphql/dox_graphql.dart';
 import 'package:dox_orm/dox_orm.dart';
 
 import '../../dtos/create_post.dart';
-import '../../policies/policies.dart';
 import '../comment/comment.model.dart';
 import '../image/image.model.dart';
 import '../tag/tag.model.dart';
@@ -13,7 +13,13 @@ part 'post.model.g.dart';
 enum PostStatus { draft, published }
 
 @DoxModel(table: 'posts')
-@GraphQLType(dto: CreatePostDto, policy: PostPolicy, auth: false)
+@GraphQLType()
+@GraphQLAll()
+@GraphQLPaginate()
+@GraphQLFind()
+@GraphQLCreate(dto: CreatePostDto)
+@GraphQLUpdate(dto: CreatePostDto, can: Ability.update)
+@GraphQLDelete(can: Ability.delete)
 class Post extends PostGenerator {
   @override
   List<String> get fillable => <String>['title', 'body', 'user_id'];

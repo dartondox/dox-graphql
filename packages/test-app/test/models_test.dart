@@ -151,14 +151,17 @@ void main() {
       expect(res['errors'], isNotEmpty);
     });
 
-    test('queries: false gives no root query, the relation stays', () async {
-      Map<String, Object?> res = await run(client, '{ comments { body } }');
-      expect(res['errors'], isNotEmpty);
-      res = await run(client, '{ comment(id: "1") { body } }');
-      expect(res['errors'], isNotEmpty);
-      res = await run(client, '{ post(id: "1") { comments { body } } }');
-      expect(res['errors'], isNull);
-    });
+    test(
+      'no operation annotation: no root query, the relation stays',
+      () async {
+        Map<String, Object?> res = await run(client, '{ comments { body } }');
+        expect(res['errors'], isNotEmpty);
+        res = await run(client, '{ comment(id: "1") { body } }');
+        expect(res['errors'], isNotEmpty);
+        res = await run(client, '{ post(id: "1") { comments { body } } }');
+        expect(res['errors'], isNull);
+      },
+    );
   });
 
   group('writes with dto: |', () {
@@ -247,11 +250,21 @@ void main() {
       });
     });
 
-    test('a model without dto: has no mutations', () async {
-      Map<String, Object?> res = await run(
-        client,
-        'mutation { createUser(input: {}) { id } }',
-      );
+    test('a model with no write annotation has no mutations', () async {
+      for (String m in <String>[
+        'createUser(input: {}) { id }',
+        'updateUser(id: "1", input: {}) { id }',
+        'deleteUser(id: "1")',
+      ]) {
+        Map<String, Object?> res = await run(client, 'mutation { $m }');
+        expect(res['errors'], isNotEmpty, reason: m);
+      }
+    });
+
+    test('only @GraphQLPaginate: the paged list has the plural name', () async {
+      Map<String, Object?> res = await run(client, '{ notes { data { id } } }');
+      expect(res['errors'], isNull);
+      res = await run(client, '{ notesPaginate { data { id } } }');
       expect(res['errors'], isNotEmpty);
     });
   });
