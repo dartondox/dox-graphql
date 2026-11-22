@@ -1,5 +1,7 @@
-## Unreleased
+## 0.0.2
 
+- The package accepts each 0.0.x version of dox_graphql. Before, it
+  accepted only 0.0.1.
 - `GraphQLOrm.many` makes one `Future` less for each parent row. A query
   with a list relation is faster when many requests wait at the same
   time.

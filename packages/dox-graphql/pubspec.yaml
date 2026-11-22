@@ -1,6 +1,6 @@
 name: dox_graphql
 description: 'GraphQL for Dart and the Dox framework: schema, validation, execution, introspection, DataLoader and an HTTP endpoint with GraphiQL.'
-version: 0.0.1
+version: 0.0.2
 homepage: https://dartondox.dev
 repository: https://github.com/dartondox/dox-graphql
 
