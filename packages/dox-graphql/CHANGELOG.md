@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 - A query with many fields is faster and uses less memory. The engine
   now makes a `Future` only for a value that waits, like the value of an

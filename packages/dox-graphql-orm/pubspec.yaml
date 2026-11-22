@@ -1,6 +1,6 @@
 name: dox_graphql_orm
 description: 'The dox_orm part of dox_graphql: list and find queries, relations loaded in batches, and writes for @GraphQL models.'
-version: 0.0.1
+version: 0.0.2
 homepage: https://dartondox.dev
 repository: https://github.com/dartondox/dox-graphql
 
@@ -9,7 +9,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  dox_graphql: ^0.0.1
+  dox_graphql: '>=0.0.1 <0.1.0'
   dox_orm: ^3.2.3
 
 dev_dependencies:
