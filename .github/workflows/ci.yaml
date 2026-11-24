@@ -37,6 +37,7 @@ jobs:
         with:
           workspaces: |
             ../dox-http-native/native -> target
+            ../dox-http-native/packages/dox-http-native/native -> target
       # Builds the native library of the clone, for this machine only.
       - name: Build the native clone
         run: ci/use-siblings.sh build
@@ -68,6 +69,7 @@ jobs:
         with:
           workspaces: |
             ../dox-http-native/native -> target
+            ../dox-http-native/packages/dox-http-native/native -> target
       # Builds the native library of the clone, for this machine only.
       - name: Build the native clone
         run: ci/use-siblings.sh build
